@@ -1,0 +1,46 @@
+{
+  "date": "Wednesday, May 6, 2026",
+  "analyst": "Leo",
+  "subtitle": "Live snapshot - Pre-market / delayed quotes where applicable",
+  "market": {
+    "indexes": [
+      ["S&P 500", "$7,259.22", "+0.81%", "+2.05%", "+5.84%"],
+      ["Nasdaq Comp.", "$25,326.12", "+1.03%", "+2.62%", "+8.97%"],
+      ["Dow Jones Ind.", "$49,298.25", "+0.73%", "+0.27%", "+1.90%"],
+      ["Russell 2000", "$2,844.96", "+1.75%", "+3.23%", "+13.77%"],
+      ["VIX", "$17.48", "-0.81", "-4.43%", "+20.47%"]
+    ],
+    "assets": [
+      ["WTI Crude (CL.F)", "$101.71", "-4.43%", "+1.78%", "+75.51%"],
+      ["Gold (GC.F)", "$4,554.30", "+0.46%", "-0.81%", "+4.21%"],
+      ["Bitcoin (BTC)", "$80,937.36", "+2.73%", "+1.06%", "-8.80%"],
+      ["USD / EUR", "1.1871", "-0.01%", "+0.79%", "+0.17%"],
+      ["10-Yr Treasury", "4.416%", "-0.67%", "+0.25%", "+5.38%"]
+    ]
+  },
+  "tone": "Tone - U.S. equities rallied into the latest snapshot, led by Nasdaq (+1.03%) and Russell 2000 (+1.75%), while the Dow and S&P 500 also advanced. The VIX eased to 17.48 as risk appetite improved, and 10-yr Treasury yields hovered near 4.42%. Crude oil remains elevated at roughly $102 despite a sharp daily pullback, while gold near $4,554 and bitcoin above $80,900 keep the cross-asset tape focused on inflation, liquidity, and risk positioning.",
+  "earnings": {
+    "beats": [
+      ["AVTX", "Avalo", "$9.40", "+60.0%", "Positive pipeline update / financing drove after-hours squeeze. Read-through: XBI, IBB."],
+      ["SMCI", "Super Micro", "$32.68", "+17.0%", "Post-close rebound as AI server demand narrative stabilized. Read-through: DELL, HPE, NVDA."],
+      ["AMD", "AMD", "$355.26", "+5.0%", "Earnings beat and stronger AI accelerator outlook supported chip read-through. Read-through: NVDA, MRVL, SMH."],
+      ["GOOGL", "Alphabet", "$174.62", "+2.0%", "Mega-cap tech bid improved on AI monetization and cloud sentiment. Read-through: MSFT, META, AMZN."],
+      ["SWKS", "Skyworks", "$75.50", "+5.4%", "Semis recovered after guidance commentary; handset exposure screened better. Read-through: QRVO, AVGO."]
+    ],
+    "misses": [
+      ["UPST", "Upstart", "$63.00", "-13.0%", "Guidance and credit concerns pressured fintech lenders. Read-through: AFRM, SOFI, LC."],
+      ["ANET", "Arista", "$90.20", "-11.0%", "Investors faded networking results despite AI capex debate. Read-through: CSCO, JNPR, NTAP."],
+      ["TEM", "Tempus AI", "$51.10", "-9.0%", "AI healthcare momentum cooled after earnings reaction. Read-through: GH, EXAS, TDOC."],
+      ["DASH", "DoorDash", "$187.40", "-5.0%", "Margin and investment intensity weighed on delivery platforms. Read-through: UBER, CART."],
+      ["ON", "ON Semi", "$44.60", "-4.9%", "Auto/industrial semi demand softness stayed in focus. Read-through: TXN, NXPI, MCHP."]
+    ]
+  },
+  "themes": [
+    "Risk-On Breadth Improves. Small caps led the tape with Russell 2000 up 1.75%, suggesting broader participation beyond mega-cap tech. Key read-throughs: IWM, XLF, KRE, XLI, XRT.",
+    "AI Growth Bid Holds. AMD's earnings response and Nasdaq strength kept the AI infrastructure trade bid. Read-throughs: NVDA, SMCI, AVGO, MRVL, SMH.",
+    "Energy Volatility Persists. WTI near $102 remains high versus the start of the year even after a sharp daily pullback. Read-throughs: XOM, CVX, MPC, DAL, UPS.",
+    "Defensive Hedge Demand Stays Visible. Gold near $4,554 points to continued demand for macro hedges even as equities rally and VIX declines. Read-throughs: GLD, NEM, WPM, AEM, PG.",
+    "Fintech Credit Sensitivity. UPST weakness shows investors are still punishing lending models with guidance or credit quality uncertainty. Read-throughs: AFRM, SOFI, LC, HOOD."
+  ],
+  "sourceNote": "Live version for Leo. Market snapshot: Yahoo Finance. Earnings movers: May 5 after-hours / May 6 pre-market public movers; delayed quotes where applicable."
+}

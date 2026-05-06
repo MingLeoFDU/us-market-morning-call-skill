@@ -1,0 +1,3 @@
+display_name: US Market Morning Call
+short_description: Generate a one-page US equity morning note PDF.
+default_prompt: Create today's US Market Morning Call PDF for analyst Leo using current market snapshot and overnight earnings movers.
