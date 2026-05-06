@@ -38,3 +38,38 @@ Each table row is represented as an array of display-ready strings, preserving e
 ## Notes
 
 The script has no external npm dependencies. It writes a vector PDF directly using built-in Node.js APIs.
+
+## Feishu Delivery Agent
+
+The Feishu delivery layer is independent from the PDF renderer:
+
+- PDF rendering skill: `SKILL.md` + `scripts/generate_pdf.js`
+- Feishu delivery skill: `feishu-delivery-skill/SKILL.md`
+- Daily agent: `scripts/run_daily_agent.js`
+
+Manual run:
+
+```bash
+FEISHU_APP_ID=cli_xxx \
+FEISHU_APP_SECRET=xxx \
+FEISHU_RECEIVE_ID=oc_xxx \
+FEISHU_RECEIVE_ID_TYPE=chat_id \
+ANALYST=Leo \
+node scripts/run_daily_agent.js
+```
+
+GitHub Actions schedule:
+
+`.github/workflows/daily-feishu.yml` runs on weekdays at `10:30 UTC`, which is `06:30 New York time` during US daylight time.
+
+Required repository secrets:
+
+- `FEISHU_APP_ID`
+- `FEISHU_APP_SECRET`
+- `FEISHU_RECEIVE_ID`
+- `FEISHU_RECEIVE_ID_TYPE`
+
+Optional repository variables/secrets:
+
+- `ANALYST`, default `Leo`
+- `EARNINGS_MOVERS_JSON`, used when you want curated overnight earnings movers instead of the default Yahoo daily gainers/losers screen
