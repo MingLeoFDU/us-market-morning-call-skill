@@ -47,7 +47,15 @@ The Feishu delivery layer is independent from the PDF renderer:
 - Feishu delivery skill: `feishu-delivery-skill/SKILL.md`
 - Daily agent: `scripts/run_daily_agent.js`
 
-Manual run:
+Personal Feishu webhook mode:
+
+```bash
+FEISHU_WEBHOOK_URL=https://open.feishu.cn/open-apis/bot/v2/hook/xxx \
+ANALYST=Leo \
+node scripts/run_daily_agent.js
+```
+
+Custom app file upload mode:
 
 ```bash
 FEISHU_APP_ID=cli_xxx \
@@ -63,6 +71,10 @@ GitHub Actions schedule:
 `.github/workflows/daily-feishu.yml` runs on weekdays at `10:30 UTC`, which is `06:30 New York time` during US daylight time.
 
 Required repository secrets:
+
+- `FEISHU_WEBHOOK_URL` for personal Feishu webhook mode
+
+Or, for custom app file upload mode:
 
 - `FEISHU_APP_ID`
 - `FEISHU_APP_SECRET`

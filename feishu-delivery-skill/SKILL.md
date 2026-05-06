@@ -11,9 +11,21 @@ This skill is intentionally separate from the PDF rendering skill. It only orche
 
 1. Fetch daily input data.
 2. Call the existing PDF generator.
-3. Upload and send the PDF through a Feishu custom app bot.
+3. Notify Feishu through either a personal webhook bot or a Feishu custom app bot.
 
-Run manually:
+## Personal Feishu Webhook Mode
+
+Use this for personal Feishu. It sends a message with the generated PDF path or GitHub Actions run link. It does not upload the file body into chat.
+
+```bash
+FEISHU_WEBHOOK_URL=https://open.feishu.cn/open-apis/bot/v2/hook/xxx \
+ANALYST=Leo \
+node scripts/run_daily_agent.js
+```
+
+## Custom App File Upload Mode
+
+Use this when you have a Feishu custom app with file upload permissions. It uploads the PDF and sends it as a file message.
 
 ```bash
 FEISHU_APP_ID=cli_xxx \
@@ -24,7 +36,7 @@ ANALYST=Leo \
 node scripts/run_daily_agent.js
 ```
 
-## Required Feishu Setup
+## Required Feishu Setup For File Upload
 
 Create a Feishu custom app bot and grant these permissions:
 

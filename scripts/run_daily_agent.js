@@ -21,6 +21,10 @@ function run(label, args, options = {}) {
 
 run("Fetch daily data", ["scripts/fetch_daily_data.js", "--out", dataPath]);
 run("Generate PDF", ["scripts/generate_pdf.js", "--data", dataPath, "--out", pdfPath]);
-run("Send PDF to Feishu", ["scripts/send_feishu_file.js", "--file", pdfPath]);
+if (process.env.FEISHU_WEBHOOK_URL) {
+  run("Notify Feishu webhook", ["scripts/send_feishu_webhook.js", "--pdf", pdfPath]);
+} else {
+  run("Send PDF to Feishu", ["scripts/send_feishu_file.js", "--file", pdfPath]);
+}
 
 console.log(JSON.stringify({ ok: true, data: dataPath, pdf: pdfPath }, null, 2));
