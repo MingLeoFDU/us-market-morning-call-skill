@@ -3,9 +3,9 @@ name: Daily Feishu Morning Call
 on:
   workflow_dispatch:
   schedule:
-    # 06:30 New York time is 10:30 UTC during US daylight time.
-    # Adjust this cron if you want a different delivery time.
-    - cron: "30 10 * * 1-5"
+    # 06:30 New York time, Monday-Friday.
+    - cron: "30 6 * * 1-5"
+      timezone: "America/New_York"
 
 jobs:
   send-morning-call:
