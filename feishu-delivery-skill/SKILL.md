@@ -15,13 +15,15 @@ This skill is intentionally separate from the PDF rendering skill. It only orche
 
 ## Personal Feishu Webhook Mode
 
-Use this for personal Feishu. It sends a message with the generated PDF path or GitHub Actions run link. It does not upload the file body into chat.
+Use this for personal Feishu. It sends a WYSIWYG interactive research card directly into chat. It does not upload the file body into chat.
 
 ```bash
 FEISHU_WEBHOOK_URL=https://open.feishu.cn/open-apis/bot/v2/hook/xxx \
 ANALYST=Leo \
 node scripts/run_daily_agent.js
 ```
+
+The daily card contains rates, equity indexes, US and China Mega 7 watchlists, commodities, and important economic/news headlines.
 
 ## Custom App File Upload Mode
 

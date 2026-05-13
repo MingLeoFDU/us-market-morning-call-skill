@@ -47,7 +47,7 @@ The Feishu delivery layer is independent from the PDF renderer:
 - Feishu delivery skill: `feishu-delivery-skill/SKILL.md`
 - Daily agent: `scripts/run_daily_agent.js`
 
-Personal Feishu webhook mode:
+Personal Feishu webhook mode sends a WYSIWYG interactive research card directly into Feishu. PDF and JSON files are still saved as GitHub Actions artifacts for audit/backups.
 
 ```bash
 FEISHU_WEBHOOK_URL=https://open.feishu.cn/open-apis/bot/v2/hook/xxx \
@@ -85,3 +85,43 @@ Optional repository variables/secrets:
 
 - `ANALYST`, default `Leo`
 - `EARNINGS_MOVERS_JSON`, used when you want curated overnight earnings movers instead of the default Yahoo daily gainers/losers screen
+
+## Daily AI Research Push
+
+The Feishu card is generated from `scripts/fetch_ai_research_data.js` and includes:
+
+- Rates: 13W, 5Y, 10Y, 30Y US Treasury yields
+- Equities: S&P 500, Nasdaq, Dow, Hang Seng, Hang Seng Tech, Shanghai, Shenzhen, CSI 300/500/1000
+- Watchlist: US Mega 7 and China Mega 7
+- Commodities: gold, silver, copper, aluminum, WTI oil
+- News: headline plus one-sentence summary from public RSS feeds
+
+### Data Sources
+
+Market data source:
+
+```text
+Yahoo Finance chart API
+https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?range=1mo&interval=1d&includePrePost=true
+```
+
+Typical fields used:
+
+- `regularMarketPrice`
+- daily close series
+- daily / 1-week / 1-month percentage change derived from close series
+- `currency`
+- `marketState`
+
+News sources:
+
+- Yahoo Finance RSS
+- MarketWatch realtime headlines RSS
+- Reuters business/finance RSS
+
+Optional overrides:
+
+- `NEWS_ITEMS_JSON` for curated news
+- `EARNINGS_MOVERS_JSON` for curated earnings movers
+
+Personal Feishu webhook limitation: it can render the report as a card, but it cannot upload a local image/PDF file body into chat. True image/file upload requires Feishu custom app credentials and file permissions.
