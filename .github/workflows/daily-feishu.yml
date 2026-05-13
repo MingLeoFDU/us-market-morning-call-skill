@@ -3,9 +3,9 @@ name: Daily Feishu Morning Call
 on:
   workflow_dispatch:
   schedule:
-    # 06:30 New York time, Monday-Friday.
-    - cron: "30 6 * * 1-5"
-      timezone: "America/New_York"
+    # GitHub cron is UTC. Trigger at both possible UTC times for 06:30 New York
+    # across daylight/standard time, then gate inside the job.
+    - cron: "30 10,11 * * 1-5"
 
 jobs:
   send-morning-call:
@@ -21,7 +21,27 @@ jobs:
         with:
           node-version: "22"
 
+      - name: Check New York delivery time
+        id: ny-time
+        if: github.event_name == 'schedule'
+        run: |
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const parts = new Intl.DateTimeFormat('en-US', {
+            timeZone: 'America/New_York',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false,
+          }).formatToParts(new Date());
+          const get = (type) => parts.find((part) => part.type === type).value;
+          const hhmm = `${get('hour')}:${get('minute')}`;
+          const shouldRun = hhmm === '06:30';
+          console.log(shouldRun ? 'Continue at 06:30 New York time.' : `Skip: New York time is ${hhmm}, not 06:30.`);
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `should_run=${shouldRun}\n`);
+          NODE
+
       - name: Generate and send AI research card
+        if: github.event_name == 'workflow_dispatch' || steps.ny-time.outputs.should_run == 'true'
         env:
           ANALYST: ${{ vars.ANALYST || 'Leo' }}
           FEISHU_WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK_URL }}

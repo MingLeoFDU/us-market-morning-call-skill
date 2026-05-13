@@ -90,10 +90,13 @@ Optional repository variables/secrets:
 
 The Feishu card is generated from `scripts/fetch_ai_research_data.js` and includes:
 
+- Top-line risk regime, risk score, breadth, and key watchpoints
+- Market consensus inferred from rates, equity breadth, Mega 7 performance, commodities, and news
+- Strategy suggestions for positioning and risk control
 - Rates: 13W, 5Y, 10Y, 30Y US Treasury yields
 - Equities: S&P 500, Nasdaq, Dow, Hang Seng, Hang Seng Tech, Shanghai, Shenzhen, CSI 300/500/1000
 - Watchlist: US Mega 7 and China Mega 7
-- Commodities: gold, silver, copper, aluminum, WTI oil
+- Commodities: gold, silver, copper, aluminum, lithium-chain proxy, WTI oil
 - News: headline plus one-sentence summary from public RSS feeds
 
 ### Data Sources
@@ -125,3 +128,5 @@ Optional overrides:
 - `EARNINGS_MOVERS_JSON` for curated earnings movers
 
 Personal Feishu webhook limitation: it can render the report as a card, but it cannot upload a local image/PDF file body into chat. True image/file upload requires Feishu custom app credentials and file permissions.
+
+The market consensus and strategy blocks are rule-based investment research heuristics, not brokerage consensus estimates or personalized investment advice.

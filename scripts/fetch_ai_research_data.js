@@ -5,47 +5,48 @@ const path = require("node:path");
 
 const GROUPS = {
   rates: [
-    ["13W T-Bill", "^IRX", "yield10"],
-    ["5Y UST", "^FVX", "yield10"],
-    ["10Y UST", "^TNX", "yield10"],
-    ["30Y UST", "^TYX", "yield10"],
+    ["13周美债", "^IRX", "yield10"],
+    ["5年美债", "^FVX", "yield10"],
+    ["10年美债", "^TNX", "yield10"],
+    ["30年美债", "^TYX", "yield10"],
   ],
   equities: [
-    ["S&P 500", "^GSPC"],
-    ["Nasdaq", "^IXIC"],
-    ["Dow Jones", "^DJI"],
-    ["Hang Seng", "^HSI"],
-    ["Hang Seng Tech", "^HSTECH"],
-    ["Shanghai Comp.", "000001.SS"],
-    ["Shenzhen Comp.", "399001.SZ"],
-    ["CSI 300", "000300.SS"],
-    ["CSI 500", "000905.SS"],
-    ["CSI 1000", "000852.SS"],
+    ["标普500", "^GSPC"],
+    ["纳斯达克", "^IXIC"],
+    ["道琼斯", "^DJI"],
+    ["恒生指数", "^HSI"],
+    ["恒生科技", "^HSTECH"],
+    ["上证指数", "000001.SS"],
+    ["深证成指", "399001.SZ"],
+    ["沪深300", "000300.SS"],
+    ["中证500", "000905.SS"],
+    ["中证1000", "000852.SS"],
   ],
   usMega7: [
-    ["Apple", "AAPL"],
-    ["Microsoft", "MSFT"],
-    ["Nvidia", "NVDA"],
-    ["Amazon", "AMZN"],
-    ["Alphabet", "GOOGL"],
+    ["苹果", "AAPL"],
+    ["微软", "MSFT"],
+    ["英伟达", "NVDA"],
+    ["亚马逊", "AMZN"],
+    ["谷歌", "GOOGL"],
     ["Meta", "META"],
-    ["Tesla", "TSLA"],
+    ["特斯拉", "TSLA"],
   ],
   cnMega7: [
-    ["Tencent", "0700.HK"],
-    ["Alibaba", "9988.HK"],
-    ["Meituan", "3690.HK"],
-    ["JD.com", "9618.HK"],
-    ["Xiaomi", "1810.HK"],
-    ["BYD", "1211.HK"],
-    ["Kweichow Moutai", "600519.SS"],
+    ["腾讯控股", "0700.HK"],
+    ["阿里巴巴", "9988.HK"],
+    ["美团", "3690.HK"],
+    ["京东集团", "9618.HK"],
+    ["小米集团", "1810.HK"],
+    ["比亚迪", "1211.HK"],
+    ["贵州茅台", "600519.SS"],
   ],
   commodities: [
-    ["Gold", "GC=F"],
-    ["Silver", "SI=F"],
-    ["Copper", "HG=F"],
-    ["Aluminum", "ALI=F"],
-    ["WTI Oil", "CL=F"],
+    ["黄金", "GC=F"],
+    ["白银", "SI=F"],
+    ["铜", "HG=F"],
+    ["铝", "ALI=F"],
+    ["碳酸锂链(LIT)", "LIT"],
+    ["WTI原油", "CL=F"],
   ],
 };
 
@@ -66,6 +67,11 @@ function env(name, fallback = "") {
 
 function pct(value, digits = 2) {
   return `${value > 0 ? "+" : ""}${Number(value).toFixed(digits)}%`;
+}
+
+function parsePct(value) {
+  const parsed = Number(String(value || "").replace("%", ""));
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 function number(value, digits = 2) {
@@ -161,7 +167,7 @@ async function fetchNews() {
         const description = stripHtml(block.match(/<description>([\s\S]*?)<\/description>/)?.[1]);
         const link = stripHtml(block.match(/<link>([\s\S]*?)<\/link>/)?.[1]);
         if (title && !items.some((item) => item.title === title)) {
-          items.push({ source, title, summary: description.slice(0, 120) || "Market-relevant headline to monitor today.", link });
+          items.push({ source, title, summary: chineseNewsSummary(title, description), link });
         }
       }
     } catch {
@@ -169,6 +175,16 @@ async function fetchNews() {
     }
   }
   return items.slice(0, 6);
+}
+
+function chineseNewsSummary(title, description) {
+  const text = `${title} ${description}`.toLowerCase();
+  if (/(fed|rate|inflation|cpi|pce|yield)/.test(text)) return "利率与通胀预期相关信息，可能影响成长股估值和美元资产定价。";
+  if (/(tariff|trade|china|geopolitic|war|sanction)/.test(text)) return "宏观或地缘政治变量升温，重点观察风险偏好、供应链和中国资产反应。";
+  if (/(ai|chip|nvidia|semiconductor|tech)/.test(text)) return "科技与 AI 产业线索，可能影响美股 Mega 7、半导体和港股科技情绪。";
+  if (/(earnings|profit|revenue|guidance)/.test(text)) return "公司财报或业绩指引变化，重点观察同行业估值重估和盈利预期修正。";
+  if (/(oil|gold|copper|commodity|energy)/.test(text)) return "大宗商品相关事件，可能影响通胀、资源股和周期资产表现。";
+  return stripHtml(description).slice(0, 80) || "重要市场新闻，建议结合当日价格反应判断影响方向。";
 }
 
 function topMoves(rows, n = 3) {
@@ -195,6 +211,105 @@ function buildNarrative(sections, news) {
   ];
 }
 
+function breadth(rows) {
+  const valid = rows.filter((row) => row.oneDay !== "n/a");
+  if (!valid.length) return 0;
+  return valid.filter((row) => parsePct(row.oneDay) > 0).length / valid.length;
+}
+
+function averageMove(rows) {
+  const valid = rows.filter((row) => row.oneDay !== "n/a");
+  if (!valid.length) return 0;
+  return valid.reduce((sum, row) => sum + parsePct(row.oneDay), 0) / valid.length;
+}
+
+function getRow(rows, name) {
+  return rows.find((row) => row.name === name) || {};
+}
+
+function buildDashboard(sections) {
+  const equityBreadth = breadth(sections.equities);
+  const megaBreadth = breadth(sections.usMega7);
+  const cnBreadth = breadth(sections.cnMega7);
+  const tenYear = getRow(sections.rates, "10年美债");
+  const gold = getRow(sections.commodities, "黄金");
+  const oil = getRow(sections.commodities, "WTI原油");
+  const spx = getRow(sections.equities, "标普500");
+  const hstech = getRow(sections.equities, "恒生科技");
+  const score = Math.round(
+    50
+      + (equityBreadth - 0.5) * 32
+      + (megaBreadth - 0.5) * 18
+      + Math.max(-12, Math.min(12, averageMove(sections.usMega7) * 4))
+      - Math.max(-8, Math.min(8, parsePct(tenYear.oneDay || "0") * 0.8))
+  );
+  const clamped = Math.max(0, Math.min(100, score));
+  let regime = "中性震荡";
+  if (clamped >= 65) regime = "风险偏好上行";
+  if (clamped <= 40) regime = "防御优先";
+  return {
+    riskScore: clamped,
+    regime,
+    equityBreadth: `${Math.round(equityBreadth * 100)}%`,
+    megaBreadth: `${Math.round(megaBreadth * 100)}%`,
+    cnBreadth: `${Math.round(cnBreadth * 100)}%`,
+    watch: [
+      `标普500 ${spx.oneDay || "n/a"}，恒生科技 ${hstech.oneDay || "n/a"}`,
+      `10年美债 ${tenYear.last || "n/a"}，日内 ${tenYear.change || tenYear.oneDay || "n/a"}`,
+      `黄金 ${gold.oneDay || "n/a"}，原油 ${oil.oneDay || "n/a"}`,
+    ],
+  };
+}
+
+function assertDataQuality(sections) {
+  const allRows = Object.values(sections).flat();
+  const validRows = allRows.filter((row) => row.oneDay !== "n/a");
+  const requiredNames = ["标普500", "纳斯达克", "10年美债", "黄金", "WTI原油"];
+  const missingRequired = requiredNames.filter((name) => !allRows.find((row) => row.name === name && row.oneDay !== "n/a"));
+  if (missingRequired.length || validRows.length < Math.ceil(allRows.length * 0.65)) {
+    throw new Error(
+      `Market data quality check failed. Missing required: ${missingRequired.join(", ") || "none"}. Valid rows: ${validRows.length}/${allRows.length}.`
+    );
+  }
+}
+
+function buildConsensus(sections, dashboard) {
+  const nasdaq = getRow(sections.equities, "纳斯达克");
+  const tenYear = getRow(sections.rates, "10年美债");
+  const hsi = getRow(sections.equities, "恒生指数");
+  const hstech = getRow(sections.equities, "恒生科技");
+  const gold = getRow(sections.commodities, "黄金");
+  const oil = getRow(sections.commodities, "WTI原油");
+  const consensus = [
+    `市场共识偏向“${dashboard.regime}”：风险分数 ${dashboard.riskScore}/100，权益上涨广度 ${dashboard.equityBreadth}。`,
+    `美股定价主线仍看“利率 + AI 盈利”：纳指 ${nasdaq.oneDay || "n/a"}，10年美债 ${tenYear.last || "n/a"}。`,
+    `中国资产关注政策与盈利修复是否共振：恒生 ${hsi.oneDay || "n/a"}，恒生科技 ${hstech.oneDay || "n/a"}。`,
+    `大宗反映通胀与避险拉扯：黄金 ${gold.oneDay || "n/a"}，原油 ${oil.oneDay || "n/a"}。`,
+  ];
+  return consensus;
+}
+
+function buildStrategy(sections, dashboard) {
+  const tenYear = getRow(sections.rates, "10年美债");
+  const usMegaAvg = averageMove(sections.usMega7);
+  const cnMegaAvg = averageMove(sections.cnMega7);
+  const oil = getRow(sections.commodities, "WTI原油");
+  const strategy = [];
+  if (dashboard.riskScore >= 65) {
+    strategy.push("权益仓位可维持中高水平，但优先选择盈利确定性强、现金流质量高的龙头。");
+  } else if (dashboard.riskScore <= 40) {
+    strategy.push("降低追涨，保留现金和防御资产，等待利率或指数广度改善后再加风险。");
+  } else {
+    strategy.push("维持均衡配置，指数不追高，围绕强业绩和政策催化做结构性机会。");
+  }
+  if (parsePct(tenYear.oneDay) > 0.5) strategy.push("若美债收益率继续上行，成长股估值承压，Mega 7 更适合逢回调而非追高。");
+  if (usMegaAvg > 0.5) strategy.push("美股 Mega 7 相对强势，可关注 AI 算力、云和广告链条的延续性。");
+  if (cnMegaAvg > 0.5) strategy.push("中国 Mega 7 出现修复时，优先看互联网平台、消费电子和新能源龙头的成交放量。");
+  if (parsePct(oil.oneDay) > 1) strategy.push("油价上行会抬高通胀预期，利好能源链但压制航空、物流和部分消费。");
+  strategy.push("单日信号只用于仓位微调，核心决策仍需结合趋势、估值和未来 1-2 周事件日历。");
+  return strategy.slice(0, 5);
+}
+
 async function main() {
   const output = path.resolve(arg("out", `data/ai-research-${new Date().toISOString().slice(0, 10)}.json`));
   const [rates, equities, usMega7, cnMega7, commodities, news] = await Promise.all([
@@ -205,6 +320,8 @@ async function main() {
     fetchGroup(GROUPS.commodities),
     fetchNews(),
   ]);
+  const sections = { rates, equities, usMega7, cnMega7, commodities };
+  assertDataQuality(sections);
   const data = {
     title: "每日 AI 投研推送",
     date: todayShanghai(),
@@ -214,10 +331,13 @@ async function main() {
       news: NEWS_RSS.map(([name, url]) => ({ name, url })),
       overrides: ["NEWS_ITEMS_JSON", "EARNINGS_MOVERS_JSON"],
     },
-    sections: { rates, equities, usMega7, cnMega7, commodities },
+    sections,
     news,
-    narrative: buildNarrative({ rates, equities, usMega7, cnMega7, commodities }, news),
+    dashboard: buildDashboard(sections),
+    narrative: buildNarrative(sections, news),
   };
+  data.consensus = buildConsensus(data.sections, data.dashboard);
+  data.strategy = buildStrategy(data.sections, data.dashboard);
   fs.mkdirSync(path.dirname(output), { recursive: true });
   fs.writeFileSync(output, `${JSON.stringify(data, null, 2)}\n`);
   console.log(output);
