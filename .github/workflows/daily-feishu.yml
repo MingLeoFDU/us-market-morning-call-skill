@@ -21,7 +21,7 @@ jobs:
         with:
           node-version: "22"
 
-      - name: Check New York delivery time
+      - name: Check New York delivery window
         id: ny-time
         if: github.event_name == 'schedule'
         run: |
@@ -35,8 +35,9 @@ jobs:
           }).formatToParts(new Date());
           const get = (type) => parts.find((part) => part.type === type).value;
           const hhmm = `${get('hour')}:${get('minute')}`;
-          const shouldRun = hhmm === '06:30';
-          console.log(shouldRun ? 'Continue at 06:30 New York time.' : `Skip: New York time is ${hhmm}, not 06:30.`);
+          const minutes = Number(get('hour')) * 60 + Number(get('minute'));
+          const shouldRun = minutes >= 390 && minutes < 450;
+          console.log(shouldRun ? `Continue: New York time is ${hhmm}.` : `Skip: New York time is ${hhmm}, outside 06:30-07:29.`);
           fs.appendFileSync(process.env.GITHUB_OUTPUT, `should_run=${shouldRun}\n`);
           NODE
 
