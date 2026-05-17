@@ -2,10 +2,10 @@ name: Daily Feishu Morning Call
 
 on:
   workflow_dispatch:
-  # Schedule is intentionally paused while the Macro Daily Signal format is in review.
-  # Re-enable after approval:
-  # schedule:
-  #   - cron: "30 10,11 * * 1-5"
+  schedule:
+    # GitHub cron is UTC. Trigger at both possible UTC times for 06:30 New York
+    # across daylight/standard time, then gate inside the job.
+    - cron: "30 10,11 * * 1-5"
 
 jobs:
   send-morning-call:
@@ -41,7 +41,7 @@ jobs:
           fs.appendFileSync(process.env.GITHUB_OUTPUT, `should_run=${shouldRun}\n`);
           NODE
 
-      - name: Generate and send AI research card
+      - name: Generate and send Macro Daily Signal
         if: github.event_name == 'workflow_dispatch' || steps.ny-time.outputs.should_run == 'true'
         env:
           ANALYST: ${{ vars.ANALYST || 'Leo' }}
@@ -57,7 +57,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: us-market-morning-call
+          name: macro-daily-signal
           path: |
-            output/*.pdf
+            output/*.md
             data/*.json

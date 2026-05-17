@@ -5,9 +5,8 @@ const path = require("node:path");
 
 const root = path.resolve(__dirname, "..");
 const stamp = new Date().toISOString().slice(0, 10);
-const dataPath = path.join(root, "data", `morning-call-${stamp}.json`);
-const researchDataPath = path.join(root, "data", `ai-research-${stamp}.json`);
-const pdfPath = path.join(root, "output", `US_Market_Morning_Call_${stamp}.pdf`);
+const macroDataPath = path.join(root, "data", `macro-signal-${stamp}.json`);
+const macroMarkdownPath = path.join(root, "output", `Macro_Daily_Signal_${stamp}.md`);
 
 function run(label, args, options = {}) {
   console.log(`\n== ${label} ==`);
@@ -20,13 +19,13 @@ function run(label, args, options = {}) {
   if (result.status !== 0) process.exit(result.status || 1);
 }
 
-run("Fetch PDF data", ["scripts/fetch_daily_data.js", "--out", dataPath]);
-run("Generate PDF backup", ["scripts/generate_pdf.js", "--data", dataPath, "--out", pdfPath]);
-run("Fetch AI research data", ["scripts/fetch_ai_research_data.js", "--out", researchDataPath]);
-if (process.env.FEISHU_WEBHOOK_URL) {
-  run("Send Feishu research card", ["scripts/send_feishu_research_card.js", "--data", researchDataPath]);
-} else {
-  run("Send PDF to Feishu", ["scripts/send_feishu_file.js", "--file", pdfPath]);
+if (!process.env.FEISHU_WEBHOOK_URL) {
+  console.error("Missing FEISHU_WEBHOOK_URL. Set it as a GitHub Actions secret before running delivery.");
+  process.exit(1);
 }
 
-console.log(JSON.stringify({ ok: true, data: dataPath, researchData: researchDataPath, pdf: pdfPath }, null, 2));
+run("Fetch macro signal data", ["scripts/fetch_macro_signal_data.js", "--out", macroDataPath]);
+run("Render macro signal markdown", ["scripts/render_macro_signal_markdown.js", "--data", macroDataPath, "--out", macroMarkdownPath]);
+run("Send Feishu macro signal card", ["scripts/send_feishu_macro_signal_card.js", "--data", macroDataPath]);
+
+console.log(JSON.stringify({ ok: true, data: macroDataPath, markdown: macroMarkdownPath }, null, 2));
