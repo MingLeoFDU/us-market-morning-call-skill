@@ -1,0 +1,35 @@
+name: Daily Stock News Feishu
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 09:00 Asia/Shanghai, Monday-Friday.
+    - cron: "0 1 * * 1-5"
+
+jobs:
+  send-stock-news:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Generate and send stock news
+        env:
+          FEISHU_WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK_URL }}
+        run: node scripts/run_stock_news_agent.js
+
+      - name: Upload stock news artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stock-news
+          path: |
+            output/*.md
+            data/*.json
