@@ -3,9 +3,9 @@ name: Daily Feishu Morning Call
 on:
   workflow_dispatch:
   schedule:
-    # GitHub cron is UTC. Trigger at both possible UTC times for 06:30 New York
-    # across daylight/standard time, then gate inside the job.
-    - cron: "30 10,11 * * 1-5"
+    # 06:30 New York time during US daylight time.
+    # GitHub cron is UTC; remove the in-job time gate to avoid delayed runs being skipped.
+    - cron: "30 10 * * 1-5"
 
 jobs:
   send-morning-call:
@@ -21,28 +21,7 @@ jobs:
         with:
           node-version: "22"
 
-      - name: Check New York delivery window
-        id: ny-time
-        if: github.event_name == 'schedule'
-        run: |
-          node - <<'NODE'
-          const fs = require('node:fs');
-          const parts = new Intl.DateTimeFormat('en-US', {
-            timeZone: 'America/New_York',
-            hour: '2-digit',
-            minute: '2-digit',
-            hour12: false,
-          }).formatToParts(new Date());
-          const get = (type) => parts.find((part) => part.type === type).value;
-          const hhmm = `${get('hour')}:${get('minute')}`;
-          const minutes = Number(get('hour')) * 60 + Number(get('minute'));
-          const shouldRun = minutes >= 390 && minutes < 450;
-          console.log(shouldRun ? `Continue: New York time is ${hhmm}.` : `Skip: New York time is ${hhmm}, outside 06:30-07:29.`);
-          fs.appendFileSync(process.env.GITHUB_OUTPUT, `should_run=${shouldRun}\n`);
-          NODE
-
       - name: Generate and send Macro Daily Signal
-        if: github.event_name == 'workflow_dispatch' || steps.ny-time.outputs.should_run == 'true'
         env:
           ANALYST: ${{ vars.ANALYST || 'Leo' }}
           FEISHU_WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK_URL }}
