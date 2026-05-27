@@ -18,11 +18,12 @@ function required(value, label) {
 }
 
 function itemBlock(item, index) {
+  const tags = [item.category, ...(item.tags || []).slice(0, 2)].filter(Boolean).join(" / ");
   return {
     tag: "div",
     text: {
       tag: "lark_md",
-      content: `**${index + 1}. ${item.titleZh}**\n${item.contentZh}\n来源：${item.source}　[原文](${item.link})`,
+      content: `**${index + 1}. [${tags}] ${item.titleZh}**\n${item.contentZh}\n来源：${item.source}　[原文](${item.link})`,
     },
   };
 }
@@ -31,7 +32,7 @@ function buildCard(data) {
   const elements = [
     {
       tag: "markdown",
-      content: "以下为今日股市相关新闻精选。标题与摘要已翻译为中文，原文链接保留用于追溯。",
+      content: "以下为今日股市投研新闻精选。每条新闻按“发生了什么、为什么重要、关注资产”整理，中文源实时优先，海外源兜底。",
     },
     { tag: "hr" },
   ];
@@ -41,7 +42,7 @@ function buildCard(data) {
   });
   elements.push({
     tag: "note",
-    elements: [{ tag: "plain_text", content: "数据源：Yahoo Finance、MarketWatch、CNBC、Nasdaq、Reuters RSS。摘要翻译为中文，不复刻全文。" }],
+    elements: [{ tag: "plain_text", content: "数据源：财联社电报、东方财富7x24、东方财富个股新闻；Google News/Yahoo/MarketWatch/CNBC 兜底。内容为中文投研摘要，不复刻全文。" }],
   });
   return {
     config: { wide_screen_mode: true },
