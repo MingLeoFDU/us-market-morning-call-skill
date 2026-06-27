@@ -31,7 +31,6 @@ jobs:
           import os
           import re
           import sys
-          import textwrap
           import urllib.request
           import xml.etree.ElementTree as ET
           from datetime import datetime, timezone, timedelta
@@ -40,7 +39,7 @@ jobs:
 
           FEISHU_WEBHOOK_URL = os.environ.get("FEISHU_WEBHOOK_URL", "").strip()
           GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
-          GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-1.5-flash")
+          GEMINI_MODEL_OVERRIDE = os.environ.get("GEMINI_MODEL", "").strip()
           TZ = timezone(timedelta(hours=8))
 
           FEEDS = [
@@ -124,10 +123,45 @@ jobs:
                       print(f"FEED_FAIL source={source!r} error={exc}")
               return items[:80]
 
-          def gemini_generate(items):
+          def available_gemini_models():
               if not GEMINI_API_KEY:
                   raise RuntimeError("GEMINI_API_KEY is not configured")
+              url = f"https://generativelanguage.googleapis.com/v1beta/models?key={GEMINI_API_KEY}"
+              resp = requests.get(url, timeout=30)
+              if resp.status_code >= 400:
+                  raise RuntimeError(f"Gemini listModels HTTP {resp.status_code}: {resp.text[:500]}")
+              models = []
+              for model in resp.json().get("models", []):
+                  methods = model.get("supportedGenerationMethods", [])
+                  name = model.get("name", "")
+                  if name and "generateContent" in methods:
+                      models.append(name)
+              print("GEMINI_AVAILABLE_MODELS=" + json.dumps(models, ensure_ascii=False))
+              return models
 
+          def choose_gemini_model():
+              if GEMINI_MODEL_OVERRIDE:
+                  return GEMINI_MODEL_OVERRIDE if GEMINI_MODEL_OVERRIDE.startswith("models/") else f"models/{GEMINI_MODEL_OVERRIDE}"
+              models = available_gemini_models()
+              preferred = [
+                  "gemini-2.5-flash",
+                  "gemini-2.0-flash",
+                  "gemini-1.5-flash",
+                  "flash",
+              ]
+              lowered = [(m, m.lower()) for m in models]
+              for needle in preferred:
+                  for model, lower in lowered:
+                      if needle in lower and "preview" not in lower and "image" not in lower:
+                          return model
+              for model, lower in lowered:
+                  if "flash" in lower and "image" not in lower:
+                      return model
+              if models:
+                  return models[0]
+              raise RuntimeError("No Gemini model supports generateContent for this key")
+
+          def gemini_generate(items):
               compact_items = []
               for i, item in enumerate(items[:60], 1):
                   compact_items.append({
@@ -162,7 +196,9 @@ jobs:
               {json.dumps(compact_items, ensure_ascii=False)}
               """
 
-              endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}"
+              model = choose_gemini_model()
+              print(f"GEMINI_MODEL_USED={model}")
+              endpoint = f"https://generativelanguage.googleapis.com/v1beta/{model}:generateContent?key={GEMINI_API_KEY}"
               payload = {
                   "contents": [{"role": "user", "parts": [{"text": prompt}]}],
                   "generationConfig": {
@@ -172,25 +208,28 @@ jobs:
                   },
               }
               resp = requests.post(endpoint, json=payload, timeout=45)
+              if resp.status_code >= 400 and "responseMimeType" in resp.text:
+                  payload["generationConfig"].pop("responseMimeType", None)
+                  resp = requests.post(endpoint, json=payload, timeout=45)
               if resp.status_code >= 400:
-                  raise RuntimeError(f"Gemini HTTP {resp.status_code}: {resp.text[:500]}")
+                  raise RuntimeError(f"Gemini generateContent HTTP {resp.status_code}: {resp.text[:500]}")
               data = resp.json()
               text = data["candidates"][0]["content"]["parts"][0]["text"]
-              return json.loads(text)
+              match = re.search(r"\[[\s\S]*\]", text)
+              return json.loads(match.group(0) if match else text)
 
           def normalize_entries(entries):
               if not isinstance(entries, list):
                   raise ValueError("Gemini did not return a list")
               cleaned = []
               for raw in entries:
-                  item = {
+                  cleaned.append({
                       "title": str(raw.get("title", "")).strip(),
                       "english": str(raw.get("english", "")).strip(),
                       "translation": str(raw.get("translation", "")).strip(),
                       "source": str(raw.get("source", "")).strip() or "Market news",
                       "source_url": str(raw.get("source_url", "")).strip(),
-                  }
-                  cleaned.append(item)
+                  })
               return cleaned
 
           def quality_gate(entries):
@@ -207,7 +246,7 @@ jobs:
                   if len(translation) < 12 or "交易台含义" in translation:
                       raise ValueError(f"Entry {idx} translation is not a real sentence")
                   title_key = title.split("（", 1)[0].strip().lower()
-                  if title_key in BAD_GENERIC or any(title_key == bad for bad in BAD_GENERIC):
+                  if title_key in BAD_GENERIC:
                       raise ValueError(f"Entry {idx} is too generic: {title_key}")
                   if len(title_key.split()) == 1 and title_key not in {"duration", "basis"}:
                       raise ValueError(f"Entry {idx} is probably too broad: {title_key}")
@@ -217,7 +256,7 @@ jobs:
               date_str = datetime.now(TZ).strftime("%Y-%m-%d")
               lines = [f"**FICC Desk English｜{date_str}**"]
               if mode != "gemini":
-                  lines.append("_Gemini 输出未通过质量检查，今日使用人工校准备用表达。_")
+                  lines.append("_Gemini 未能生成可用结果，今日使用人工校准备用表达。_")
               for i, item in enumerate(entries, 1):
                   lines.extend([
                       "",
