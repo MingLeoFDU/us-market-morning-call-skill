@@ -26,8 +26,15 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
           cat > /tmp/ficc_desk_english.py <<'PY'
-          import html, json, os, re, sys, urllib.request, xml.etree.ElementTree as ET
-          from datetime import datetime, timezone, timedelta
+          import html
+          import json
+          import os
+          import re
+          import sys
+          import urllib.request
+          import xml.etree.ElementTree as ET
+          from datetime import datetime, timedelta, timezone
+
           import requests
 
           FEISHU_WEBHOOK_URL = os.environ.get("FEISHU_WEBHOOK_URL", "").strip()
@@ -50,7 +57,21 @@ jobs:
               {"title":"swap spread（互换利差）","english":"Ten-year **swap spreads** tightened as Treasury supply cheapened cash bonds against swaps.","translation":"由于美国国债供给使现券相对互换变便宜，十年期互换利差收窄。","source":"FICC fallback","source_url":"https://www.bloomberg.com/markets/rates-bonds"},
           ]
 
-          BAD_GENERIC = {"support","weigh on","bolster","concern","concerns","investors","markets","market","stocks","gain","rise","fall","slump","jump","rally","selloff","volatile","volatility","pressure","risk","outlook","data","policy"}
+          BAD_GENERIC = {
+              "support", "weigh on", "bolster", "concern", "concerns", "investors",
+              "markets", "market", "stocks", "gain", "rise", "fall", "slump", "jump",
+              "rally", "selloff", "volatile", "volatility", "pressure", "risk",
+              "outlook", "data", "policy", "traders curb bets", "traders pare bets",
+          }
+          DESK_ANCHOR_RE = re.compile(
+              r"\b(rate|rates|yield|yields|curve|front-end|long-end|duration|swap|swaps|"
+              r"spread|spreads|basis|Treasur(?:y|ies)|gilt|gilts|bund|bunds|JGB|bond|bonds|"
+              r"FX|dollar|euro|yen|yuan|sterling|currency|exchange-rate|credit|CDS|"
+              r"issuance|liquidity|funding|repo|SOFR|Fed|ECB|BoE|BoJ|PBOC|"
+              r"inflation|CPI|oil|crude|gold|copper|commodity|commodities|hike|cut|easing|tightening|rating|sovereign)\b",
+              re.I,
+          )
+          VAGUE_ACTION_RE = re.compile(r"\b(traders?|investors?)\s+(curb|pare|trim|cut|raise|boost)\s+bets?\b", re.I)
 
           def strip_tags(text):
               return re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", " ", text or ""))).strip()
@@ -103,19 +124,20 @@ jobs:
               请从下面最新英文财经新闻中挑选 exactly 5 个真正适合交易台学习的英文表达。
               严格标准：
               1. 必须是 FICC 实务常用表达，优先 rates, FX, credit, commodities, funding, curve, swaps, basis, duration, spreads, issuance, liquidity, positioning, hedging, central-bank reaction function。
-              2. 不要选泛泛新闻词或普通动词，例如 support, weigh on, bolster, concern, investors, markets, rise, fall, rally, slump, pressure, volatility, policy, data。
-              3. title 格式必须是：英文表达（准确中文译名）。例如 receive fixed（收固定）、bear flattening（熊平）、gilts（英国国债）。
-              4. english 必须是一句英文原文或近原文，且必须用 Markdown **加粗**命中的英文表达。
-              5. translation 必须是 english 这一整句的准确、自然中文翻译，不要写“这句话的交易台含义是”。
-              6. 不要编造新闻事实；可轻微整理摘要为通顺句，但必须忠于原意。
-              7. 输出只允许 JSON array，不要解释。
+              2. 表达的标题要抓“具体交易对象/指标/工具/定价变量”，例如 rate-cut bets（降息押注）、rate-hike bets（加息押注）、Treasury yields（美债收益率）、swap spreads（互换利差）、cross-currency basis（交叉货币基差）、sovereign rating（主权评级）、gilts（英国国债）。
+              3. 不要把标题写成泛动作或泛新闻词，例如 support, weigh on, bolster, concern, investors, markets, rise, fall, rally, slump, pressure, volatility, policy, data, traders curb bets。若新闻里是 traders pare ECB rate bets，标题应写 ECB rate bets（欧洲央行利率押注）或 rate-hike bets（加息押注），不要写 traders pare bets。
+              4. title 格式必须是：英文表达（准确中文译名）。例如 receive fixed（收固定）、bear flattening（熊平）、gilts（英国国债）。
+              5. english 必须是一句英文原文或近原文，且必须用 Markdown **加粗**命中的英文表达。
+              6. translation 必须是 english 这一整句的准确、自然中文翻译，不要写“这句话的交易台含义是”。
+              7. 不要编造新闻事实；可轻微整理摘要为通顺句，但必须忠于原意。
+              8. 输出只允许 JSON array，不要解释。
               JSON schema: [{{"title":"expression（中文）","english":"... **expression** ...","translation":"...","source":"...","source_url":"..."}}]
               News items: {json.dumps(compact, ensure_ascii=False)}
               """
               model = choose_gemini_model()
               print(f"GEMINI_MODEL_USED={model}")
               endpoint = f"https://generativelanguage.googleapis.com/v1beta/{model}:generateContent?key={GEMINI_API_KEY}"
-              payload = {"contents":[{"role":"user","parts":[{"text":prompt}]}],"generationConfig":{"temperature":0.15,"topP":0.8,"responseMimeType":"application/json"}}
+              payload = {"contents":[{"role":"user","parts":[{"text":prompt}]}],"generationConfig":{"temperature":0.12,"topP":0.75,"responseMimeType":"application/json"}}
               resp = requests.post(endpoint, json=payload, timeout=45)
               if resp.status_code >= 400 and "responseMimeType" in resp.text:
                   payload["generationConfig"].pop("responseMimeType", None)
@@ -146,6 +168,10 @@ jobs:
                   key = title.split("（", 1)[0].strip().lower()
                   if key in BAD_GENERIC:
                       raise ValueError(f"Entry {idx} is too generic: {key}")
+                  if VAGUE_ACTION_RE.search(key):
+                      raise ValueError(f"Entry {idx} should name the FICC object, not a vague action: {key}")
+                  if len(key.split()) >= 2 and not DESK_ANCHOR_RE.search(key + " " + english):
+                      raise ValueError(f"Entry {idx} lacks a clear FICC anchor: {key}")
               return entries
 
           def make_markdown(entries, mode):
