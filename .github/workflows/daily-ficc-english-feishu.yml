@@ -26,15 +26,8 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
           cat > /tmp/ficc_desk_english.py <<'PY'
-          import html
-          import json
-          import os
-          import re
-          import sys
-          import urllib.request
-          import xml.etree.ElementTree as ET
+          import html, json, os, re, sys, urllib.request, xml.etree.ElementTree as ET
           from datetime import datetime, timezone, timedelta
-
           import requests
 
           FEISHU_WEBHOOK_URL = os.environ.get("FEISHU_WEBHOOK_URL", "").strip()
@@ -50,66 +43,27 @@ jobs:
           ]
 
           FALLBACK_ENTRIES = [
-              {
-                  "title": "receive fixed（收固定）",
-                  "english": "The desk prefers to **receive fixed** in five-year swaps after the rates selloff pushed front-end pricing too far.",
-                  "translation": "在利率抛售把前端定价推得过头之后，交易台倾向于在五年期互换上收固定利率。",
-                  "source": "FICC fallback",
-                  "source_url": "https://www.bloomberg.com/markets/rates-bonds",
-              },
-              {
-                  "title": "bear flattening（熊平）",
-                  "english": "The curve moved into a **bear flattening** as short-end yields rose faster than the long end after the policy surprise.",
-                  "translation": "政策意外之后，短端收益率比长端升得更快，收益率曲线走出熊平。",
-                  "source": "FICC fallback",
-                  "source_url": "https://www.bloomberg.com/markets/rates-bonds",
-              },
-              {
-                  "title": "carry and roll-down（票息收益与曲线下滑收益）",
-                  "english": "Investors are adding duration where **carry and roll-down** still compensate for rate volatility.",
-                  "translation": "在票息收益与曲线下滑收益仍足以补偿利率波动的期限点，投资者正在增加久期。",
-                  "source": "FICC fallback",
-                  "source_url": "https://www.bloomberg.com/markets/rates-bonds",
-              },
-              {
-                  "title": "cross-currency basis（交叉货币基差）",
-                  "english": "The **cross-currency basis** widened as dollar funding demand picked up into month-end.",
-                  "translation": "随着月末美元融资需求上升，交叉货币基差走阔。",
-                  "source": "FICC fallback",
-                  "source_url": "https://www.bloomberg.com/markets/currencies",
-              },
-              {
-                  "title": "swap spread（互换利差）",
-                  "english": "Ten-year **swap spreads** tightened as Treasury supply cheapened cash bonds against swaps.",
-                  "translation": "由于美国国债供给使现券相对互换变便宜，十年期互换利差收窄。",
-                  "source": "FICC fallback",
-                  "source_url": "https://www.bloomberg.com/markets/rates-bonds",
-              },
+              {"title":"receive fixed（收固定）","english":"The desk prefers to **receive fixed** in five-year swaps after the rates selloff pushed front-end pricing too far.","translation":"在利率抛售把前端定价推得过头之后，交易台倾向于在五年期互换上收固定利率。","source":"FICC fallback","source_url":"https://www.bloomberg.com/markets/rates-bonds"},
+              {"title":"bear flattening（熊平）","english":"The curve moved into a **bear flattening** as short-end yields rose faster than the long end after the policy surprise.","translation":"政策意外之后，短端收益率比长端升得更快，收益率曲线走出熊平。","source":"FICC fallback","source_url":"https://www.bloomberg.com/markets/rates-bonds"},
+              {"title":"carry and roll-down（票息收益与曲线下滑收益）","english":"Investors are adding duration where **carry and roll-down** still compensate for rate volatility.","translation":"在票息收益与曲线下滑收益仍足以补偿利率波动的期限点，投资者正在增加久期。","source":"FICC fallback","source_url":"https://www.bloomberg.com/markets/rates-bonds"},
+              {"title":"cross-currency basis（交叉货币基差）","english":"The **cross-currency basis** widened as dollar funding demand picked up into month-end.","translation":"随着月末美元融资需求上升，交叉货币基差走阔。","source":"FICC fallback","source_url":"https://www.bloomberg.com/markets/currencies"},
+              {"title":"swap spread（互换利差）","english":"Ten-year **swap spreads** tightened as Treasury supply cheapened cash bonds against swaps.","translation":"由于美国国债供给使现券相对互换变便宜，十年期互换利差收窄。","source":"FICC fallback","source_url":"https://www.bloomberg.com/markets/rates-bonds"},
           ]
 
-          BAD_GENERIC = {
-              "support", "weigh on", "bolster", "concern", "concerns", "investors", "markets",
-              "market", "stocks", "gain", "rise", "fall", "slump", "jump", "rally", "selloff",
-              "volatile", "volatility", "pressure", "risk", "outlook", "data", "policy",
-          }
+          BAD_GENERIC = {"support","weigh on","bolster","concern","concerns","investors","markets","market","stocks","gain","rise","fall","slump","jump","rally","selloff","volatile","volatility","pressure","risk","outlook","data","policy"}
 
           def strip_tags(text):
-              text = re.sub(r"<[^>]+>", " ", text or "")
-              text = html.unescape(text)
-              return re.sub(r"\s+", " ", text).strip()
+              return re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", " ", text or ""))).strip()
 
           def fetch_feed(source, url):
               req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
               with urllib.request.urlopen(req, timeout=20) as resp:
-                  data = resp.read()
-              root = ET.fromstring(data)
+                  root = ET.fromstring(resp.read())
               items = []
               for item in root.findall(".//item")[:25]:
                   title = strip_tags(item.findtext("title"))
-                  desc = strip_tags(item.findtext("description"))
-                  link = strip_tags(item.findtext("link"))
                   if title:
-                      items.append({"source": source, "title": title, "summary": desc, "url": link})
+                      items.append({"source": source, "title": title, "summary": strip_tags(item.findtext("description")), "url": strip_tags(item.findtext("link"))})
               return items
 
           def collect_items():
@@ -123,147 +77,83 @@ jobs:
                       print(f"FEED_FAIL source={source!r} error={exc}")
               return items[:80]
 
-          def available_gemini_models():
+          def choose_gemini_model():
               if not GEMINI_API_KEY:
                   raise RuntimeError("GEMINI_API_KEY is not configured")
-              url = f"https://generativelanguage.googleapis.com/v1beta/models?key={GEMINI_API_KEY}"
-              resp = requests.get(url, timeout=30)
-              if resp.status_code >= 400:
-                  raise RuntimeError(f"Gemini listModels HTTP {resp.status_code}: {resp.text[:500]}")
-              models = []
-              for model in resp.json().get("models", []):
-                  methods = model.get("supportedGenerationMethods", [])
-                  name = model.get("name", "")
-                  if name and "generateContent" in methods:
-                      models.append(name)
-              print("GEMINI_AVAILABLE_MODELS=" + json.dumps(models, ensure_ascii=False))
-              return models
-
-          def choose_gemini_model():
               if GEMINI_MODEL_OVERRIDE:
                   return GEMINI_MODEL_OVERRIDE if GEMINI_MODEL_OVERRIDE.startswith("models/") else f"models/{GEMINI_MODEL_OVERRIDE}"
-              models = available_gemini_models()
-              preferred = [
-                  "gemini-2.5-flash",
-                  "gemini-2.0-flash",
-                  "gemini-1.5-flash",
-                  "flash",
-              ]
-              lowered = [(m, m.lower()) for m in models]
-              for needle in preferred:
-                  for model, lower in lowered:
-                      if needle in lower and "preview" not in lower and "image" not in lower:
+              resp = requests.get(f"https://generativelanguage.googleapis.com/v1beta/models?key={GEMINI_API_KEY}", timeout=30)
+              if resp.status_code >= 400:
+                  raise RuntimeError(f"Gemini listModels HTTP {resp.status_code}: {resp.text[:500]}")
+              models = [m.get("name", "") for m in resp.json().get("models", []) if "generateContent" in m.get("supportedGenerationMethods", [])]
+              print("GEMINI_AVAILABLE_MODELS=" + json.dumps(models, ensure_ascii=False))
+              for needle in ("gemini-2.5-flash", "gemini-2.0-flash", "gemini-3.5-flash", "gemini-flash-latest", "flash"):
+                  for model in models:
+                      low = model.lower()
+                      if needle in low and "image" not in low and "tts" not in low:
                           return model
-              for model, lower in lowered:
-                  if "flash" in lower and "image" not in lower:
-                      return model
               if models:
                   return models[0]
               raise RuntimeError("No Gemini model supports generateContent for this key")
 
           def gemini_generate(items):
-              compact_items = []
-              for i, item in enumerate(items[:60], 1):
-                  compact_items.append({
-                      "id": i,
-                      "source": item["source"],
-                      "headline": item["title"][:220],
-                      "summary": item["summary"][:360],
-                      "url": item["url"],
-                  })
-
+              compact = [{"id": i, "source": x["source"], "headline": x["title"][:220], "summary": x["summary"][:360], "url": x["url"]} for i, x in enumerate(items[:60], 1)]
               prompt = f"""
               你是外资行 FICC trading desk 的英语教练，服务对象是中文母语的 FICC/宏观/固收/外汇/商品交易与研究人员。
-
-              请从下面这些最新英文财经新闻中，挑选 exactly 5 个真正适合交易台学习的英文表达。
-
-              选择标准必须严格：
+              请从下面最新英文财经新闻中挑选 exactly 5 个真正适合交易台学习的英文表达。
+              严格标准：
               1. 必须是 FICC 实务常用表达，优先 rates, FX, credit, commodities, funding, curve, swaps, basis, duration, spreads, issuance, liquidity, positioning, hedging, central-bank reaction function。
               2. 不要选泛泛新闻词或普通动词，例如 support, weigh on, bolster, concern, investors, markets, rise, fall, rally, slump, pressure, volatility, policy, data。
-              3. 每个表达必须来自一条英文原文句子；如果新闻标题不够完整，可用标题加摘要形成一句自然英文。
-              4. title 格式必须是：英文表达（准确中文译名）。例如 receive fixed（收固定）、bear flattening（熊平）。
-              5. english 必须是一句英文原文或近原文，且必须用 Markdown **加粗**命中的英文表达。
-              6. translation 必须是 english 这一整句的准确、自然中文翻译，不要写“这句话的交易台含义是”。
-              7. 不要编造新闻事实；可以轻微整理摘要为通顺句，但必须忠于原意。
-              8. 输出只允许是 JSON array，不要解释。
-
-              JSON schema:
-              [
-                {{"title":"expression（中文）","english":"... **expression** ...","translation":"...","source":"...","source_url":"..."}}
-              ]
-
-              News items:
-              {json.dumps(compact_items, ensure_ascii=False)}
+              3. title 格式必须是：英文表达（准确中文译名）。例如 receive fixed（收固定）、bear flattening（熊平）、gilts（英国国债）。
+              4. english 必须是一句英文原文或近原文，且必须用 Markdown **加粗**命中的英文表达。
+              5. translation 必须是 english 这一整句的准确、自然中文翻译，不要写“这句话的交易台含义是”。
+              6. 不要编造新闻事实；可轻微整理摘要为通顺句，但必须忠于原意。
+              7. 输出只允许 JSON array，不要解释。
+              JSON schema: [{{"title":"expression（中文）","english":"... **expression** ...","translation":"...","source":"...","source_url":"..."}}]
+              News items: {json.dumps(compact, ensure_ascii=False)}
               """
-
               model = choose_gemini_model()
               print(f"GEMINI_MODEL_USED={model}")
               endpoint = f"https://generativelanguage.googleapis.com/v1beta/{model}:generateContent?key={GEMINI_API_KEY}"
-              payload = {
-                  "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-                  "generationConfig": {
-                      "temperature": 0.15,
-                      "topP": 0.8,
-                      "responseMimeType": "application/json",
-                  },
-              }
+              payload = {"contents":[{"role":"user","parts":[{"text":prompt}]}],"generationConfig":{"temperature":0.15,"topP":0.8,"responseMimeType":"application/json"}}
               resp = requests.post(endpoint, json=payload, timeout=45)
               if resp.status_code >= 400 and "responseMimeType" in resp.text:
                   payload["generationConfig"].pop("responseMimeType", None)
                   resp = requests.post(endpoint, json=payload, timeout=45)
               if resp.status_code >= 400:
                   raise RuntimeError(f"Gemini generateContent HTTP {resp.status_code}: {resp.text[:500]}")
-              data = resp.json()
-              text = data["candidates"][0]["content"]["parts"][0]["text"]
+              text = resp.json()["candidates"][0]["content"]["parts"][0]["text"]
               match = re.search(r"\[[\s\S]*\]", text)
               return json.loads(match.group(0) if match else text)
 
           def normalize_entries(entries):
               if not isinstance(entries, list):
                   raise ValueError("Gemini did not return a list")
-              cleaned = []
-              for raw in entries:
-                  cleaned.append({
-                      "title": str(raw.get("title", "")).strip(),
-                      "english": str(raw.get("english", "")).strip(),
-                      "translation": str(raw.get("translation", "")).strip(),
-                      "source": str(raw.get("source", "")).strip() or "Market news",
-                      "source_url": str(raw.get("source_url", "")).strip(),
-                  })
-              return cleaned
+              return [{"title":str(x.get("title","")).strip(),"english":str(x.get("english","")).strip(),"translation":str(x.get("translation","")).strip(),"source":str(x.get("source","")).strip() or "Market news","source_url":str(x.get("source_url","")).strip()} for x in entries]
 
           def quality_gate(entries):
+              print("GEMINI_CANDIDATE_ENTRIES=" + json.dumps(entries, ensure_ascii=False, indent=2))
               if len(entries) != 5:
                   raise ValueError(f"Need exactly 5 entries, got {len(entries)}")
               for idx, item in enumerate(entries, 1):
-                  title = item["title"]
-                  english = item["english"]
-                  translation = item["translation"]
+                  title, english, translation = item["title"], item["english"], item["translation"]
                   if not title or "（" not in title or "）" not in title:
                       raise ValueError(f"Entry {idx} title format is weak: {title}")
                   if "**" not in english:
                       raise ValueError(f"Entry {idx} missing bold term")
                   if len(translation) < 12 or "交易台含义" in translation:
                       raise ValueError(f"Entry {idx} translation is not a real sentence")
-                  title_key = title.split("（", 1)[0].strip().lower()
-                  if title_key in BAD_GENERIC:
-                      raise ValueError(f"Entry {idx} is too generic: {title_key}")
-                  if len(title_key.split()) == 1 and title_key not in {"duration", "basis"}:
-                      raise ValueError(f"Entry {idx} is probably too broad: {title_key}")
+                  key = title.split("（", 1)[0].strip().lower()
+                  if key in BAD_GENERIC:
+                      raise ValueError(f"Entry {idx} is too generic: {key}")
               return entries
 
           def make_markdown(entries, mode):
-              date_str = datetime.now(TZ).strftime("%Y-%m-%d")
-              lines = [f"**FICC Desk English｜{date_str}**"]
+              lines = [f"**FICC Desk English｜{datetime.now(TZ).strftime('%Y-%m-%d')}**"]
               if mode != "gemini":
                   lines.append("_Gemini 未能生成可用结果，今日使用人工校准备用表达。_")
               for i, item in enumerate(entries, 1):
-                  lines.extend([
-                      "",
-                      f"**{i}. {item['title']}**",
-                      item["english"],
-                      item["translation"],
-                  ])
+                  lines += ["", f"**{i}. {item['title']}**", item["english"], item["translation"]]
                   if item.get("source"):
                       lines.append(f"来源：{item['source']}")
               return "\n".join(lines)
@@ -271,25 +161,15 @@ jobs:
           def send_feishu(markdown):
               if not FEISHU_WEBHOOK_URL:
                   raise RuntimeError("FEISHU_WEBHOOK_URL is not configured")
-              payload = {
-                  "msg_type": "interactive",
-                  "card": {
-                      "config": {"wide_screen_mode": True},
-                      "header": {
-                          "title": {"tag": "plain_text", "content": "FICC Desk English"},
-                          "template": "blue",
-                      },
-                      "elements": [{"tag": "markdown", "content": markdown}],
-                  },
-              }
+              payload = {"msg_type":"interactive","card":{"config":{"wide_screen_mode":True},"header":{"title":{"tag":"plain_text","content":"FICC Desk English"},"template":"blue"},"elements":[{"tag":"markdown","content":markdown}]}}
               resp = requests.post(FEISHU_WEBHOOK_URL, json=payload, timeout=20)
               print(f"FEISHU_STATUS={resp.status_code} {resp.text[:300]}")
               resp.raise_for_status()
 
           def main():
-              items = collect_items()
               mode = "gemini"
               try:
+                  items = collect_items()
                   if not items:
                       raise RuntimeError("No RSS items collected")
                   entries = quality_gate(normalize_entries(gemini_generate(items)))
