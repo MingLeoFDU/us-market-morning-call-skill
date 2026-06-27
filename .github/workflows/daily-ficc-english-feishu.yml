@@ -1,0 +1,239 @@
+name: Daily FICC Desk English
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 08:45 Asia/Shanghai every day
+    - cron: "45 0 * * *"
+
+jobs:
+  send-ficc-desk-english:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: python -m pip install --upgrade requests
+
+      - name: Generate and send Feishu card
+        env:
+          FEISHU_WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK_URL }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          cat > /tmp/ficc_desk_english.py <<'PY'
+          import html
+          import json
+          import os
+          import re
+          import time
+          import urllib.request
+          import xml.etree.ElementTree as ET
+          from datetime import datetime, timezone, timedelta
+
+          import requests
+
+          CN_TZ = timezone(timedelta(hours=8))
+          TODAY = datetime.now(CN_TZ).strftime("%Y-%m-%d")
+          WEBHOOK = os.environ.get("FEISHU_WEBHOOK_URL", "").strip()
+          OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "").strip()
+
+          FEEDS = [
+              ("Bloomberg Markets", "https://feeds.bloomberg.com/markets/news.rss", 6),
+              ("Bloomberg Economics", "https://feeds.bloomberg.com/economics/news.rss", 5),
+              ("Financial Times Markets", "https://www.ft.com/markets?format=rss", 4),
+              ("ING Think", "https://think.ing.com/rss/latest/", 4),
+              ("Reuters Business", "https://feeds.reuters.com/reuters/businessNews", 3),
+          ]
+
+          SEEDS = [
+              (r"\b(priced in|pricing in|price in|prices in)\b", "price in", "计入预期", "市场把新的政策路径或事件概率提前反映进价格。"),
+              (r"\b(rate-cut bets|rate cut bets|cut bets|easing bets|easing expectations)\b", "rate-cut bets", "降息押注", "市场对未来降息时点、次数或幅度的交易押注。"),
+              (r"\b(terminal rate|terminal-rate)\b", "terminal rate", "终端利率", "本轮政策周期中市场预期央行利率会达到的峰值。"),
+              (r"\b(front end|front-end)\b", "front end", "收益率曲线短端", "通常指2年及以内、对央行政策最敏感的期限。"),
+              (r"\b(long end|long-end)\b", "long end", "收益率曲线长端", "通常指10年、30年等长期期限，受供给、期限溢价和久期需求影响更大。"),
+              (r"\b(bull steepen(?:er|ing)?|bull-steepen(?:er|ing)?)\b", "bull steepening", "牛陡", "收益率整体下行时，短端下行更多，曲线变陡。"),
+              (r"\b(bear flatten(?:er|ing)?|bear-flatten(?:er|ing)?)\b", "bear flattening", "熊平", "收益率整体上行时，短端上行更多，曲线变平。"),
+              (r"\b(duration)\b", "duration", "久期", "债券或组合对利率变化的敏感度。"),
+              (r"\b(carry and roll(?:-down)?|carry-and-roll(?:-down)?|roll[- ]down|rolldown)\b", "carry and roll-down", "票息收益与曲线下滑收益", "持有债券获得的carry，以及期限缩短沿曲线下滑带来的估值收益。"),
+              (r"\b(term premium|term-premium)\b", "term premium", "期限溢价", "投资者持有长期债券所要求的额外补偿。"),
+              (r"\b(real yield|real yields|real-yield|real-yields)\b", "real yields", "实际收益率", "剔除通胀预期后的收益率，常影响黄金、美元和成长股估值。"),
+              (r"\b(breakeven|breakevens|break-even|break-evens)\b", "breakevens", "通胀盈亏平衡率", "名义债与通胀保值债收益率之差，反映市场通胀预期。"),
+              (r"\b(swap spread|swap spreads|swap-spread|swap-spreads)\b", "swap spreads", "互换利差", "IRS固定利率与同期限国债收益率的差，反映供需、资产负债表和流动性因素。"),
+              (r"\b(cross-currency basis|cross currency basis|x-ccy basis|xccy basis)\b", "cross-currency basis", "交叉货币基差", "跨币种融资互换中的基差，常用于观察美元融资压力。"),
+              (r"\b(dollar funding|USD funding|funding pressure|funding pressures)\b", "dollar funding", "美元融资", "美元流动性和融资成本。"),
+              (r"\b(flight to quality|safe-haven bid|haven bid)\b", "safe-haven bid", "避险买盘", "风险偏好下降时流入国债、美元、日元、黄金等避险资产的需求。"),
+              (r"\b(rich|cheap|cheapen|cheapened|cheapening|richen|richened|richening)\b", "rich / cheap", "偏贵/偏便宜", "相对曲线、互换或可比资产估值偏贵或偏便宜。"),
+              (r"\b(belly of the curve|belly)\b", "belly of the curve", "曲线腹部", "通常指5年到7年等中期限位置。"),
+              (r"\b(pay fixed|paid fixed|payer|receive fixed|received fixed|receiver)\b", "pay fixed / receive fixed", "付固定/收固定", "利率互换交易方向；付固定偏看利率上行，收固定偏看利率下行。"),
+              (r"\b(repo special|trading special|specialness)\b", "repo specialness", "回购特殊性", "某只债券因稀缺而在回购市场以特殊低利率融资。"),
+          ]
+
+          FALLBACK = [
+              ("price in（计入预期）", "Rates markets are **pricing in** two cuts by year-end after the softer inflation print.", "通胀数据偏弱后，利率市场开始计入年内两次降息。"),
+              ("front end（收益率曲线短端）", "The **front end** rallied as traders brought forward the timing of the first cut.", "交易员把首次降息时间提前，收益率曲线短端上涨。"),
+              ("carry and roll-down（票息收益与曲线下滑收益）", "The five-year sector still offers attractive **carry and roll-down** if rates stay range-bound.", "如果利率维持区间震荡，5年期限仍有不错的持有收益和曲线下滑收益。"),
+              ("swap spreads（互换利差）", "**Swap spreads** tightened as Treasury issuance cheapened cash bonds versus swaps.", "国债供给使现券相对互换变便宜，互换利差收窄。"),
+              ("cross-currency basis（交叉货币基差）", "The **cross-currency basis** widened as year-end dollar funding demand picked up.", "年末美元融资需求上升，交叉货币基差走阔。"),
+          ]
+
+          FICC_WORDS = re.compile(r"\b(rate|rates|bond|bonds|treasury|treasuries|yield|yields|curve|fed|ecb|boj|fx|dollar|credit|spread|swap|repo|oil|gold|inflation|duration|auction|funding)\b", re.I)
+          STOP = {"market", "markets", "traders", "investors", "central bank", "policy", "inflation", "rates", "yields"}
+
+          def clean(s):
+              s = html.unescape(s or "")
+              s = re.sub(r"<[^>]+>", " ", s)
+              return re.sub(r"\s+", " ", s).strip()
+
+          def fetch_items():
+              items = []
+              errors = []
+              headers = {"User-Agent": "Mozilla/5.0 FICC-Desk-English/1.0"}
+              for source, url, weight in FEEDS:
+                  try:
+                      r = requests.get(url, headers=headers, timeout=25)
+                      r.raise_for_status()
+                      root = ET.fromstring(r.text)
+                      nodes = root.findall(".//item")
+                      ns = {"atom": "http://www.w3.org/2005/Atom"}
+                      nodes += root.findall(".//atom:entry", ns)
+                      for n in nodes[:25]:
+                          title = clean(n.findtext("title") or n.findtext("atom:title", namespaces=ns))
+                          summary = clean(n.findtext("description") or n.findtext("atom:summary", namespaces=ns) or n.findtext("atom:content", namespaces=ns))
+                          link = clean(n.findtext("link"))
+                          link_node = n.find("atom:link", ns)
+                          if not link and link_node is not None:
+                              link = link_node.attrib.get("href", "")
+                          pub = clean(n.findtext("pubDate") or n.findtext("atom:updated", namespaces=ns) or n.findtext("atom:published", namespaces=ns))
+                          if title:
+                              items.append({"source": source, "title": title, "summary": summary, "link": link, "published": pub, "weight": weight})
+                  except Exception as e:
+                      errors.append(f"{source}: {type(e).__name__}: {e}")
+                  time.sleep(0.2)
+              return items, errors
+
+          def sentences(item):
+              text = clean(item["title"] + ". " + item.get("summary", ""))
+              return [x.strip() for x in re.split(r"(?<=[.!?])\s+", text) if x.strip()]
+
+          def score_item(item):
+              text = (item["title"] + " " + item.get("summary", "")).lower()
+              seed = sum(10 for pat, *_ in SEEDS if re.search(pat, text, re.I))
+              ficc = len(FICC_WORDS.findall(text))
+              return item["weight"] + seed + ficc
+
+          def highlight(sentence, pattern):
+              m = re.search(pattern, sentence, re.I)
+              if not m:
+                  return sentence, None
+              return sentence[:m.start()] + "**" + m.group(0) + "**" + sentence[m.end():], m.group(0)
+
+          def dynamic_phrase(sentence):
+              if not FICC_WORDS.search(sentence):
+                  return None
+              patterns = [
+                  r"\b(?:fade|fading|buy|sell|receive|pay|short|cover|hedge|roll|extend|add|trim)\s+(?:the\s+)?[A-Za-z][A-Za-z-]+(?:\s+[A-Za-z][A-Za-z-]+){0,3}\b",
+                  r"\b[A-Za-z][A-Za-z-]+\s+(?:rally|selloff|concession|tail|squeeze|repricing|underperformance|outperformance|hedge|basis|spread|premium|duration)\b",
+                  r"\b(?:auction|funding|liquidity|curve|basis|repo|swap|credit|duration)\s+[A-Za-z][A-Za-z-]+\b",
+              ]
+              candidates = []
+              for pat in patterns:
+                  for m in re.finditer(pat, sentence, re.I):
+                      phrase = m.group(0).strip(" .,:;()[]").lower()
+                      if len(phrase) < 8 or phrase in STOP:
+                          continue
+                      candidates.append((m.start(), m.end(), m.group(0)))
+              if not candidates:
+                  return None
+              candidates.sort(key=lambda x: (-len(x[2]), x[0]))
+              return candidates[0]
+
+          def llm_enrich(entries):
+              if not OPENAI_API_KEY or not entries:
+                  return entries
+              try:
+                  prompt = "你是FICC交易台英语老师。请把每条英文原句翻译成简洁中文，并保留交易台语感。只返回JSON数组，每项含translation字段。\n" + json.dumps(entries, ensure_ascii=False)
+                  body = {
+                      "model": "gpt-4.1-mini",
+                      "messages": [{"role": "user", "content": prompt}],
+                      "temperature": 0.2,
+                  }
+                  r = requests.post("https://api.openai.com/v1/chat/completions", headers={"Authorization": f"Bearer {OPENAI_API_KEY}", "Content-Type": "application/json"}, json=body, timeout=40)
+                  r.raise_for_status()
+                  data = json.loads(r.json()["choices"][0]["message"]["content"])
+                  for e, d in zip(entries, data):
+                      if d.get("translation"):
+                          e["translation"] = d["translation"]
+              except Exception as e:
+                  print("OpenAI enrichment skipped:", e)
+              return entries
+
+          def build_entries(items):
+              entries, seen = [], set()
+              for item in sorted(items, key=score_item, reverse=True):
+                  for s in sentences(item):
+                      for pat, phrase, zh, note in SEEDS:
+                          if phrase in seen:
+                              continue
+                          marked, hit = highlight(s, pat)
+                          if hit:
+                              entries.append({"title": f"{phrase}（{zh}）", "english": marked, "translation": f"这句话的交易台含义：{note} 原文里的“{hit}”对应“{zh}”。", "source": item})
+                              seen.add(phrase)
+                              break
+                      if len(entries) >= 5:
+                          return llm_enrich(entries)
+              for item in sorted(items, key=score_item, reverse=True):
+                  for s in sentences(item):
+                      dyn = dynamic_phrase(s)
+                      if not dyn:
+                          continue
+                      start, end, raw = dyn
+                      key = raw.lower()
+                      if key in seen:
+                          continue
+                      marked = s[:start] + "**" + raw + "**" + s[end:]
+                      entries.append({"title": f"{raw}（动态FICC表达）", "english": marked, "translation": "这句话来自实时FICC语料，可作为交易台表达积累；重点看加粗短语在利率、外汇、信用或商品语境中的用法。", "source": item})
+                      seen.add(key)
+                      if len(entries) >= 5:
+                          return llm_enrich(entries)
+              for title, english, cn in FALLBACK:
+                  if len(entries) >= 5:
+                      break
+                  if title not in seen:
+                      entries.append({"title": title, "english": english, "translation": cn, "source": {"source": "fallback", "title": "Standing FICC desk sentence", "link": "", "published": ""}})
+                      seen.add(title)
+              return llm_enrich(entries[:5])
+
+          def card(entries):
+              elements = []
+              for i, e in enumerate(entries, 1):
+                  src = e["source"]
+                  elements.append({"tag": "div", "text": {"tag": "lark_md", "content": f"**{i}. {e['title']}**\n{e['english']}\n\n中文翻译：{e['translation']}"}})
+                  note = f"{src.get('source','')} | {src.get('published','') or TODAY} | {src.get('title','')}"
+                  elements.append({"tag": "note", "elements": [{"tag": "plain_text", "content": note[:500]}]})
+                  if src.get("link"):
+                      elements.append({"tag": "action", "actions": [{"tag": "button", "text": {"tag": "plain_text", "content": "Source"}, "type": "default", "url": src["link"]}]})
+                  if i != len(entries):
+                      elements.append({"tag": "hr"})
+              return {"msg_type": "interactive", "card": {"config": {"wide_screen_mode": True}, "header": {"template": "turquoise", "title": {"tag": "plain_text", "content": f"FICC 交易台英语 | {TODAY}"}}, "elements": elements}}
+
+          def main():
+              if not WEBHOOK:
+                  raise SystemExit("FEISHU_WEBHOOK_URL secret is missing")
+              items, errors = fetch_items()
+              entries = build_entries(items)
+              payload = card(entries)
+              r = requests.post(WEBHOOK, json=payload, timeout=30)
+              print(json.dumps({"status_code": r.status_code, "body": r.text[:500], "items": len(items), "entries": len(entries), "errors": errors}, ensure_ascii=False, indent=2))
+              r.raise_for_status()
+              if r.json().get("code", 0) != 0:
+                  raise SystemExit(r.text)
+
+          if __name__ == "__main__":
+              main()
+          PY
+          python /tmp/ficc_desk_english.py
