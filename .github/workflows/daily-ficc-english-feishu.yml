@@ -40,7 +40,6 @@ jobs:
 
           FEISHU_WEBHOOK_URL = os.environ.get("FEISHU_WEBHOOK_URL", "").strip()
           GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
-          GEMINI_MODEL_OVERRIDE = os.environ.get("GEMINI_MODEL", "").strip()
           TZ = timezone(timedelta(hours=8))
 
           FEEDS = [
@@ -48,14 +47,6 @@ jobs:
               ("Bloomberg Economics", "https://feeds.bloomberg.com/economics/news.rss"),
               ("Financial Times Markets", "https://www.ft.com/markets?format=rss"),
               ("ING Think", "https://think.ing.com/rss/"),
-          ]
-
-          FALLBACK_ENTRIES = [
-              {"title":"receive fixed（收固定）","english":"The desk prefers to **receive fixed** in five-year swaps after the rates selloff pushed front-end pricing too far.","translation":"在利率抛售把前端定价推得过头之后，交易台倾向于在五年期互换上收固定利率。","source":"FICC fallback","source_url":"https://www.bloomberg.com/markets/rates-bonds"},
-              {"title":"bear flattening（熊平）","english":"The curve moved into a **bear flattening** as short-end yields rose faster than the long end after the policy surprise.","translation":"政策意外之后，短端收益率比长端升得更快，收益率曲线走出熊平。","source":"FICC fallback","source_url":"https://www.bloomberg.com/markets/rates-bonds"},
-              {"title":"carry and roll-down（票息收益与曲线下滑收益）","english":"Investors are adding duration where **carry and roll-down** still compensate for rate volatility.","translation":"在票息收益与曲线下滑收益仍足以补偿利率波动的期限点，投资者正在增加久期。","source":"FICC fallback","source_url":"https://www.bloomberg.com/markets/rates-bonds"},
-              {"title":"cross-currency basis（交叉货币基差）","english":"The **cross-currency basis** widened as dollar funding demand picked up into month-end.","translation":"随着月末美元融资需求上升，交叉货币基差走阔。","source":"FICC fallback","source_url":"https://www.bloomberg.com/markets/currencies"},
-              {"title":"swap spread（互换利差）","english":"Ten-year **swap spreads** tightened as Treasury supply cheapened cash bonds against swaps.","translation":"由于美国国债供给使现券相对互换变便宜，十年期互换利差收窄。","source":"FICC fallback","source_url":"https://www.bloomberg.com/markets/rates-bonds"},
           ]
 
           def strip_tags(text):
@@ -90,26 +81,35 @@ jobs:
                       print(f"FEED_FAIL source={source!r} error={exc}")
               return items[:80]
 
-          def choose_gemini_model():
+          def choose_gemini_models():
               if not GEMINI_API_KEY:
                   raise RuntimeError("GEMINI_API_KEY is not configured")
-              if GEMINI_MODEL_OVERRIDE:
-                  return GEMINI_MODEL_OVERRIDE if GEMINI_MODEL_OVERRIDE.startswith("models/") else f"models/{GEMINI_MODEL_OVERRIDE}"
               resp = requests.get(f"https://generativelanguage.googleapis.com/v1beta/models?key={GEMINI_API_KEY}", timeout=30)
               if resp.status_code >= 400:
                   raise RuntimeError(f"Gemini listModels HTTP {resp.status_code}: {resp.text[:500]}")
-              models = [m.get("name", "") for m in resp.json().get("models", []) if "generateContent" in m.get("supportedGenerationMethods", [])]
-              print("GEMINI_AVAILABLE_MODELS=" + json.dumps(models, ensure_ascii=False))
-              for needle in ("gemini-2.5-flash", "gemini-2.0-flash", "gemini-3.5-flash", "gemini-flash-latest", "flash"):
-                  for model in models:
-                      low = model.lower()
-                      if needle in low and "image" not in low and "tts" not in low:
-                          return model
-              if models:
-                  return models[0]
-              raise RuntimeError("No Gemini model supports generateContent for this key")
+              available = [m.get("name", "") for m in resp.json().get("models", []) if "generateContent" in m.get("supportedGenerationMethods", [])]
+              print("GEMINI_AVAILABLE_MODELS=" + json.dumps(available, ensure_ascii=False))
+              preferred = [
+                  "models/gemini-2.5-flash",
+                  "models/gemini-2.0-flash",
+                  "models/gemini-2.0-flash-lite",
+                  "models/gemini-2.0-flash-001",
+                  "models/gemini-flash-latest",
+                  "models/gemini-flash-lite-latest",
+                  "models/gemini-3.5-flash",
+              ]
+              models = [m for m in preferred if m in available]
+              models.extend([m for m in available if "flash" in m.lower() and "image" not in m.lower() and "tts" not in m.lower() and m not in models])
+              if not models:
+                  raise RuntimeError("No Gemini flash model supports generateContent for this key")
+              print("GEMINI_MODEL_CANDIDATES=" + json.dumps(models, ensure_ascii=False))
+              return models
 
-          def gemini_json(model, prompt, temperature):
+          def parse_json_array(text):
+              match = re.search(r"\[[\s\S]*\]", text)
+              return json.loads(match.group(0) if match else text)
+
+          def gemini_json_once(model, prompt, temperature):
               endpoint = f"https://generativelanguage.googleapis.com/v1beta/{model}:generateContent?key={GEMINI_API_KEY}"
               payload = {"contents":[{"role":"user","parts":[{"text":prompt}]}],"generationConfig":{"temperature":temperature,"topP":0.75,"responseMimeType":"application/json"}}
               resp = requests.post(endpoint, json=payload, timeout=60)
@@ -119,37 +119,25 @@ jobs:
               if resp.status_code >= 400:
                   raise RuntimeError(f"Gemini generateContent HTTP {resp.status_code}: {resp.text[:500]}")
               text = resp.json()["candidates"][0]["content"]["parts"][0]["text"]
-              match = re.search(r"\[[\s\S]*\]", text)
-              return json.loads(match.group(0) if match else text)
+              return parse_json_array(text)
 
-          def generate_candidates(model, items):
-              compact = [{"id": i, "source": x["source"], "headline": x["title"][:220], "summary": x["summary"][:360], "url": x["url"]} for i, x in enumerate(items[:60], 1)]
-              prompt = f"""
-              你是外资行 FICC trading desk 的英语教练。请从最新英文财经新闻中挑选 exactly 8 个候选英文表达，供下一轮审稿筛选。
-              候选必须优先来自 rates, FX, credit, commodities, funding, curve, swaps, basis, duration, spreads, issuance, liquidity, positioning, hedging, central-bank reaction function。
-              可以包括 USD/JPY intervention、rate-cut bets、Treasury yields、private placements、swap spreads、cross-currency basis、sovereign rating、gilts 等真实交易台表达。
-              不要选泛新闻词或普通动词，如 support, weigh on, bolster, concern, investors, markets, rise, fall, pressure, volatility, policy, data。
-              输出只允许 JSON array。每项 schema: {{"title":"英文表达（准确中文译名）","english":"... **英文表达** ...","translation":"整句中文翻译","source":"媒体名","source_url":"链接"}}
-              News items: {json.dumps(compact, ensure_ascii=False)}
-              """
-              return gemini_json(model, prompt, 0.18)
-
-          def review_with_gemini(model, candidates, items):
-              compact = [{"id": i, "source": x["source"], "headline": x["title"][:220], "summary": x["summary"][:300], "url": x["url"]} for i, x in enumerate(items[:60], 1)]
-              prompt = f"""
-              你现在是外资行 FICC trading desk 的 senior editor 和质量审查员。请严格审查候选表达，必要时直接重写，输出最终 exactly 5 条。
-              质量标准：
-              1. 必须是 FICC 实务/交易台/宏观交易常用表达，不要泛新闻词。
-              2. 标题必须是具体对象、工具、指标、定价变量或交易表达，如 USD/JPY intervention、ECB rate expectations、Treasury yields、private placements、gilts、swap spreads；不要写 traders pare bets 这种泛动作。
-              3. title 格式必须为：英文表达（准确中文译名）。
-              4. english 必须是一句英文原文或忠于原文的近原文，并用 Markdown **加粗**命中的英文表达。
-              5. translation 必须是 english 的自然中文整句翻译，不要 Markdown 加粗，不要解释“交易台含义”。
-              6. 优先保留更贴近 FICC desk 的表达；如候选不足，可从 News items 中重新挑选。
-              7. 输出只允许 JSON array，不要解释。
-              Candidates: {json.dumps(candidates, ensure_ascii=False)}
-              News items: {json.dumps(compact, ensure_ascii=False)}
-              """
-              return gemini_json(model, prompt, 0.05)
+          def gemini_json(models, prompt, temperature, stage):
+              last_error = None
+              for model in models:
+                  for attempt in range(3):
+                      try:
+                          result = gemini_json_once(model, prompt, temperature)
+                          print(f"GEMINI_CALL_OK stage={stage} model={model} attempt={attempt + 1}")
+                          return result
+                      except Exception as exc:
+                          last_error = exc
+                          msg = str(exc)
+                          print(f"GEMINI_CALL_FAIL stage={stage} model={model} attempt={attempt + 1} error={msg[:500]}")
+                          if "HTTP 429" in msg or "HTTP 503" in msg or "UNAVAILABLE" in msg:
+                              time.sleep(4 * (attempt + 1))
+                              continue
+                          break
+              raise RuntimeError(f"Gemini {stage} failed after model retries: {last_error}")
 
           def normalize_entries(entries):
               if not isinstance(entries, list):
@@ -165,29 +153,52 @@ jobs:
                   })
               return out
 
+          def generate_candidates(models, items):
+              compact = [{"id": i, "source": x["source"], "headline": x["title"][:220], "summary": x["summary"][:360], "url": x["url"]} for i, x in enumerate(items[:60], 1)]
+              prompt = f"""
+              你是外资行 FICC trading desk 的英语教练。请从最新英文财经新闻中挑选 exactly 8 个候选英文表达，供下一轮审稿筛选。
+              候选必须优先来自 rates, FX, credit, commodities, funding, curve, swaps, basis, duration, spreads, issuance, liquidity, positioning, hedging, central-bank reaction function。
+              可以包括 USD/JPY intervention、rate-cut bets、Treasury yields、private placements、swap spreads、cross-currency basis、sovereign rating、gilts 等真实交易台表达。
+              不要选泛新闻词或普通动词，如 support, weigh on, bolster, concern, investors, markets, rise, fall, pressure, volatility, policy, data。
+              title 格式必须为：英文表达（准确中文译名）。括号外必须是英文，不允许中文开头；括号内必须是中文译名。
+              输出只允许 JSON array。每项 schema: {{"title":"英文表达（准确中文译名）","english":"... **英文表达** ...","translation":"整句中文翻译","source":"媒体名","source_url":"链接"}}
+              News items: {json.dumps(compact, ensure_ascii=False)}
+              """
+              return gemini_json(models, prompt, 0.18, "candidate_generation")
+
+          def review_with_gemini(models, candidates, items):
+              compact = [{"id": i, "source": x["source"], "headline": x["title"][:220], "summary": x["summary"][:300], "url": x["url"]} for i, x in enumerate(items[:60], 1)]
+              prompt = f"""
+              你现在是外资行 FICC trading desk 的 senior editor 和质量审查员。请严格审查候选表达，必要时直接重写，输出最终 exactly 5 条。
+              质量标准：
+              1. 必须是 FICC 实务/交易台/宏观交易常用表达，不要泛新闻词。
+              2. 标题必须是具体对象、工具、指标、定价变量或交易表达，如 USD/JPY intervention、ECB rate expectations、Treasury yields、private placements、gilts、swap spreads；不要写 traders pare bets 这种泛动作。
+              3. title 格式必须为：英文表达（准确中文译名）。括号外必须是英文，不允许中文开头；括号内必须是中文译名。
+              4. english 必须是一句英文原文或忠于原文的近原文，并用 Markdown **加粗**命中的英文表达。
+              5. translation 必须是 english 的自然中文整句翻译，不要 Markdown 加粗，不要解释“交易台含义”。
+              6. 优先保留更贴近 FICC desk 的表达；如候选不足，可从 News items 中重新挑选。
+              7. 输出只允许 JSON array，不要解释。
+              Candidates: {json.dumps(candidates, ensure_ascii=False)}
+              News items: {json.dumps(compact, ensure_ascii=False)}
+              """
+              return gemini_json(models, prompt, 0.05, "quality_review")
+
           def hard_format_gate(entries):
               print("FINAL_REVIEWED_ENTRIES=" + json.dumps(entries, ensure_ascii=False, indent=2))
               if len(entries) != 5:
                   raise ValueError(f"Need exactly 5 entries, got {len(entries)}")
               for idx, item in enumerate(entries, 1):
                   title, english, translation = item["title"], item["english"], item["translation"]
+                  head = title.split("（", 1)[0].strip()
                   if not title or "（" not in title or "）" not in title:
                       raise ValueError(f"Entry {idx} title format is invalid: {title}")
+                  if not re.search(r"[A-Za-z]", head) or re.search(r"[\u4e00-\u9fff]", head):
+                      raise ValueError(f"Entry {idx} title must start with the English expression: {title}")
                   if "**" not in english:
                       raise ValueError(f"Entry {idx} missing bold term")
                   if len(translation) < 12 or "**" in translation or "交易台含义" in translation:
                       raise ValueError(f"Entry {idx} translation format is invalid")
               return entries
-
-          def make_markdown(entries, mode):
-              lines = [f"**FICC Desk English｜{datetime.now(TZ).strftime('%Y-%m-%d')}**"]
-              if mode != "gemini_reviewed":
-                  lines.append("_Gemini/API 未能生成可用结果，今日使用人工校准备用表达。_")
-              for i, item in enumerate(entries, 1):
-                  lines += ["", f"**{i}. {item['title']}**", item["english"], item["translation"]]
-                  if item.get("source"):
-                      lines.append(f"来源：{item['source']}")
-              return "\n".join(lines)
 
           def send_feishu(markdown):
               if not FEISHU_WEBHOOK_URL:
@@ -197,26 +208,40 @@ jobs:
               print(f"FEISHU_STATUS={resp.status_code} {resp.text[:300]}")
               resp.raise_for_status()
 
+          def make_markdown(entries):
+              lines = [f"**FICC Desk English｜{datetime.now(TZ).strftime('%Y-%m-%d')}**"]
+              for i, item in enumerate(entries, 1):
+                  lines += ["", f"**{i}. {item['title']}**", item["english"], item["translation"]]
+                  if item.get("source"):
+                      lines.append(f"来源：{item['source']}")
+              return "\n".join(lines)
+
+          def make_error_markdown(error):
+              return "\n".join([
+                  f"**FICC Desk English｜{datetime.now(TZ).strftime('%Y-%m-%d')}**",
+                  "今日未发送学习卡片：Gemini 质量审查未能稳定完成。",
+                  "系统已停止使用静态备用内容，避免发送不合格表达。",
+                  f"错误摘要：{str(error)[:500]}",
+              ])
+
           def main():
-              mode = "gemini_reviewed"
               try:
                   items = collect_items()
                   if not items:
                       raise RuntimeError("No RSS items collected")
-                  model = choose_gemini_model()
-                  print(f"GEMINI_MODEL_USED={model}")
-                  candidates = normalize_entries(generate_candidates(model, items))
+                  models = choose_gemini_models()
+                  candidates = normalize_entries(generate_candidates(models, items))
                   print("GEMINI_CANDIDATES=" + json.dumps(candidates, ensure_ascii=False, indent=2))
-                  reviewed = normalize_entries(review_with_gemini(model, candidates, items))
+                  reviewed = normalize_entries(review_with_gemini(models, candidates, items))
                   entries = hard_format_gate(reviewed)
+                  print("SELECTED_ENTRIES=" + json.dumps(entries, ensure_ascii=False, indent=2))
+                  markdown = make_markdown(entries)
+                  print("CARD_MARKDOWN_PREVIEW=" + markdown[:1800])
+                  send_feishu(markdown)
               except Exception as exc:
-                  print(f"QUALITY_FALLBACK reason={exc}", file=sys.stderr)
-                  mode = "fallback"
-                  entries = FALLBACK_ENTRIES
-              print("SELECTED_ENTRIES=" + json.dumps(entries, ensure_ascii=False, indent=2))
-              markdown = make_markdown(entries, mode)
-              print("CARD_MARKDOWN_PREVIEW=" + markdown[:1800])
-              send_feishu(markdown)
+                  print(f"QUALITY_REVIEW_FAILED reason={exc}", file=sys.stderr)
+                  send_feishu(make_error_markdown(exc))
+                  raise
 
           if __name__ == "__main__":
               main()
