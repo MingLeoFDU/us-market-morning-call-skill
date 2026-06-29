@@ -141,19 +141,21 @@ jobs:
                   raise RuntimeError(f"Too few RSS items collected: {len(items)}")
               return items[:80]
 
-          def request_with_retries(method, url, *, timeout=30, **kwargs):
+          def request_with_retries(method, url, *, timeout=30, attempts=3, backoff_cap=12, **kwargs):
               last_error = None
-              for attempt in range(5):
+              for attempt in range(attempts):
                   try:
                       resp = requests.request(method, url, timeout=timeout, **kwargs)
                       if resp.status_code in (408, 425, 429, 500, 502, 503, 504):
                           last_error = RuntimeError(f"HTTP {resp.status_code}: {resp.text[:300]}")
-                          time.sleep(min(45, 3 * (attempt + 1) ** 2))
+                          if attempt + 1 < attempts:
+                              time.sleep(min(backoff_cap, 2 * (attempt + 1) ** 2))
                           continue
                       return resp
                   except Exception as exc:
                       last_error = exc
-                      time.sleep(min(45, 3 * (attempt + 1) ** 2))
+                      if attempt + 1 < attempts:
+                          time.sleep(min(backoff_cap, 2 * (attempt + 1) ** 2))
               raise last_error
 
           def choose_gemini_models():
@@ -169,7 +171,7 @@ jobs:
                   "models/gemini-3.5-flash",
               ]
               try:
-                  resp = request_with_retries("GET", f"https://generativelanguage.googleapis.com/v1beta/models?key={GEMINI_API_KEY}", timeout=30)
+                  resp = request_with_retries("GET", f"https://generativelanguage.googleapis.com/v1beta/models?key={GEMINI_API_KEY}", timeout=20, attempts=2)
                   if resp.status_code >= 400:
                       raise RuntimeError(f"Gemini listModels HTTP {resp.status_code}: {resp.text[:500]}")
                   available = [m.get("name", "") for m in resp.json().get("models", []) if "generateContent" in m.get("supportedGenerationMethods", [])]
@@ -191,10 +193,10 @@ jobs:
           def gemini_json_once(model, prompt, temperature):
               endpoint = f"https://generativelanguage.googleapis.com/v1beta/{model}:generateContent?key={GEMINI_API_KEY}"
               payload = {"contents":[{"role":"user","parts":[{"text":prompt}]}],"generationConfig":{"temperature":temperature,"topP":0.75,"responseMimeType":"application/json"}}
-              resp = request_with_retries("POST", endpoint, json=payload, timeout=60)
+              resp = request_with_retries("POST", endpoint, json=payload, timeout=35, attempts=2)
               if resp.status_code >= 400 and "responseMimeType" in resp.text:
                   payload["generationConfig"].pop("responseMimeType", None)
-                  resp = request_with_retries("POST", endpoint, json=payload, timeout=60)
+                  resp = request_with_retries("POST", endpoint, json=payload, timeout=35, attempts=2)
               if resp.status_code >= 400:
                   raise RuntimeError(f"Gemini generateContent HTTP {resp.status_code}: {resp.text[:500]}")
               text = resp.json()["candidates"][0]["content"]["parts"][0]["text"]
@@ -202,8 +204,8 @@ jobs:
 
           def gemini_json(models, prompt, temperature, stage):
               last_error = None
-              for model in models:
-                  for attempt in range(3):
+              for model in models[:3]:
+                  for attempt in range(2):
                       try:
                           result = gemini_json_once(model, prompt, temperature)
                           print(f"GEMINI_CALL_OK stage={stage} model={model} attempt={attempt + 1}")
@@ -212,7 +214,7 @@ jobs:
                           last_error = exc
                           msg = str(exc)
                           print(f"GEMINI_CALL_FAIL stage={stage} model={model} attempt={attempt + 1} error={msg[:500]}")
-                          time.sleep(min(30, 3 * (attempt + 1)))
+                          time.sleep(min(10, 2 * (attempt + 1)))
               raise RuntimeError(f"Gemini {stage} failed after model retries: {last_error}")
 
           def normalize_entries(entries):
@@ -261,41 +263,51 @@ jobs:
               """
               return gemini_json(models, prompt, 0.05, "quality_review")
 
+          def validate_entry(item, idx=1):
+              failures = []
+              title, english, translation = item["title"], item["english"], item["translation"]
+              source, source_url = item.get("source", ""), item.get("source_url", "")
+              head = title.split("（", 1)[0].strip()
+              if not title or "（" not in title or "）" not in title:
+                  failures.append(f"Entry {idx} title format is invalid: {title}")
+              if not re.search(r"[A-Za-z]", head) or re.search(r"[\u4e00-\u9fff]", head):
+                  failures.append(f"Entry {idx} title must start with the English expression: {title}")
+              for pattern in BANNED_TITLE_PATTERNS:
+                  if re.search(pattern, head.lower()):
+                      failures.append(f"Entry {idx} title is too generic for FICC desk: {title}")
+              if not any(re.search(pattern, head.lower()) or re.search(pattern, english.lower()) for pattern in FICC_TERM_PATTERNS):
+                  failures.append(f"Entry {idx} is not a strong FICC desk term: {title}")
+              if "**" not in english:
+                  failures.append(f"Entry {idx} missing bold term")
+              headline_like = len(english) >= 35 and re.search(r"[A-Z]", english[:1]) and not re.search(r"\b(and|but|or|of|to|with|for|by|from|addition)$", english.strip().lower())
+              full_sentence = len(english) >= 45 and re.search(r"[.!?]$", english.strip())
+              if not (headline_like or full_sentence):
+                  failures.append(f"Entry {idx} English sentence is incomplete or too short: {english}")
+              if len(translation) < 12 or "**" in translation or "交易台含义" in translation:
+                  failures.append(f"Entry {idx} translation format is invalid")
+              if not source or source == "Market news" or not source_url.startswith("http"):
+                  failures.append(f"Entry {idx} source/source_url is missing or generic")
+              if failures:
+                  raise ValueError("; ".join(failures))
+              return item
+
           def hard_format_gate(entries):
               print("FINAL_REVIEWED_ENTRIES=" + json.dumps(entries, ensure_ascii=False, indent=2))
               if len(entries) != 5:
                   raise ValueError(f"Need exactly 5 entries, got {len(entries)}")
               failures = []
               for idx, item in enumerate(entries, 1):
-                  title, english, translation = item["title"], item["english"], item["translation"]
-                  source, source_url = item.get("source", ""), item.get("source_url", "")
-                  head = title.split("（", 1)[0].strip()
-                  if not title or "（" not in title or "）" not in title:
-                      failures.append(f"Entry {idx} title format is invalid: {title}")
-                  if not re.search(r"[A-Za-z]", head) or re.search(r"[\u4e00-\u9fff]", head):
-                      failures.append(f"Entry {idx} title must start with the English expression: {title}")
-                  for pattern in BANNED_TITLE_PATTERNS:
-                      if re.search(pattern, head.lower()):
-                          failures.append(f"Entry {idx} title is too generic for FICC desk: {title}")
-                  if not any(re.search(pattern, head.lower()) or re.search(pattern, english.lower()) for pattern in FICC_TERM_PATTERNS):
-                      failures.append(f"Entry {idx} is not a strong FICC desk term: {title}")
-                  if "**" not in english:
-                      failures.append(f"Entry {idx} missing bold term")
-                  headline_like = len(english) >= 35 and re.search(r"[A-Z]", english[:1]) and not re.search(r"\b(and|but|or|of|to|with|for|by|from|addition)$", english.strip().lower())
-                  full_sentence = len(english) >= 45 and re.search(r"[.!?]$", english.strip())
-                  if not (headline_like or full_sentence):
-                      failures.append(f"Entry {idx} English sentence is incomplete or too short: {english}")
-                  if len(translation) < 12 or "**" in translation or "交易台含义" in translation:
-                      failures.append(f"Entry {idx} translation format is invalid")
-                  if not source or source == "Market news" or not source_url.startswith("http"):
-                      failures.append(f"Entry {idx} source/source_url is missing or generic")
+                  try:
+                      validate_entry(item, idx)
+                  except Exception as exc:
+                      failures.append(str(exc))
               if failures:
                   raise ValueError("; ".join(failures[:8]))
               return entries
 
           def is_entry_usable(item):
               try:
-                  hard_format_gate([item] * 5)
+                  validate_entry(item)
                   return True
               except Exception:
                   return False
@@ -337,7 +349,7 @@ jobs:
               if not FEISHU_WEBHOOK_URL:
                   raise RuntimeError("FEISHU_WEBHOOK_URL is not configured")
               payload = {"msg_type":"interactive","card":{"config":{"wide_screen_mode":True},"header":{"title":{"tag":"plain_text","content":"FICC Desk English"},"template":"blue"},"elements":[{"tag":"markdown","content":markdown}]}}
-              resp = request_with_retries("POST", FEISHU_WEBHOOK_URL, json=payload, timeout=20)
+              resp = request_with_retries("POST", FEISHU_WEBHOOK_URL, json=payload, timeout=8, attempts=2, backoff_cap=3)
               print(f"FEISHU_STATUS={resp.status_code} {resp.text[:300]}")
               resp.raise_for_status()
 
