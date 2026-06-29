@@ -49,6 +49,13 @@ jobs:
               ("ING Think", "https://think.ing.com/rss/"),
           ]
 
+          BANNED_TITLE_PATTERNS = [
+              r"^higher interest rates$", r"^lower interest rates$", r"^interest rates$",
+              r"^markets?$", r"^investors?$", r"^inflation$", r"^growth$", r"^policy$", r"^data$",
+              r"^volatility$", r"^pressure$", r"^concerns?$", r"^support$", r"^weigh on$",
+              r"^ipo$", r"^us ipo$", r"^investment bust$", r"^debt-binge$",
+          ]
+
           def strip_tags(text):
               return re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", " ", text or ""))).strip()
 
@@ -156,10 +163,10 @@ jobs:
           def generate_candidates(models, items):
               compact = [{"id": i, "source": x["source"], "headline": x["title"][:220], "summary": x["summary"][:360], "url": x["url"]} for i, x in enumerate(items[:60], 1)]
               prompt = f"""
-              你是外资行 FICC trading desk 的英语教练。请从最新英文财经新闻中挑选 exactly 8 个候选英文表达，供下一轮审稿筛选。
+              你是外资行 FICC trading desk 的英语教练。请从最新英文财经新闻中挑选 exactly 12 个候选表达。候选必须是FICC desk高频表达：定价变量、曲线、利差、基差、久期、融资、套保、仓位、发行、主权信用、商品期限结构。
               候选必须优先来自 rates, FX, credit, commodities, funding, curve, swaps, basis, duration, spreads, issuance, liquidity, positioning, hedging, central-bank reaction function。
               可以包括 USD/JPY intervention、rate-cut bets、Treasury yields、private placements、swap spreads、cross-currency basis、sovereign rating、gilts 等真实交易台表达。
-              不要选泛新闻词或普通动词，如 support, weigh on, bolster, concern, investors, markets, rise, fall, pressure, volatility, policy, data。
+              严禁泛词或泛宏观词：higher/lower interest rates, interest rates, markets, investors, inflation, growth, policy, data, volatility, pressure, concerns, support, weigh on, IPO, investment bust, debt-binge。
               title 格式必须为：英文表达（准确中文译名）。括号外必须是英文，不允许中文开头；括号内必须是中文译名。
               输出只允许 JSON array。每项 schema: {{"title":"英文表达（准确中文译名）","english":"... **英文表达** ...","translation":"整句中文翻译","source":"媒体名","source_url":"链接"}}
               News items: {json.dumps(compact, ensure_ascii=False)}
@@ -169,10 +176,10 @@ jobs:
           def review_with_gemini(models, candidates, items):
               compact = [{"id": i, "source": x["source"], "headline": x["title"][:220], "summary": x["summary"][:300], "url": x["url"]} for i, x in enumerate(items[:60], 1)]
               prompt = f"""
-              你现在是外资行 FICC trading desk 的 senior editor 和质量审查员。请严格审查候选表达，必要时直接重写，输出最终 exactly 5 条。
+              你现在是外资行 FICC trading desk 的 senior editor 和质量审查员。请严格审查候选表达，必要时直接重写，输出最终 exactly 5 条；宁可重写也不要保留弱项。
               质量标准：
-              1. 必须是 FICC 实务/交易台/宏观交易常用表达，不要泛新闻词。
-              2. 标题必须是具体对象、工具、指标、定价变量或交易表达，如 USD/JPY intervention、ECB rate expectations、Treasury yields、private placements、gilts、swap spreads；不要写 traders pare bets 这种泛动作。
+              1. 必须是FICC desk能直接用于morning meeting、trader chat或sales note的表达。
+              2. 优先选择 rate-cut bets、front-end pricing、curve steepening/flattening、swap spreads、cross-currency basis、carry/roll-down、duration、term premium、risk premium、Treasury/gilt/Bund yields、repo/funding squeeze、new-issue concession、credit spreads、CDS、private placements、FX intervention、backwardation/contango/crack spreads。直接淘汰 higher/lower interest rates、interest rates、inflation、growth、policy、data、volatility、markets、investors、IPO、investment bust、debt-binge。
               3. title 格式必须为：英文表达（准确中文译名）。括号外必须是英文，不允许中文开头；括号内必须是中文译名。
               4. english 必须是一句英文原文或忠于原文的近原文，并用 Markdown **加粗**命中的英文表达。
               5. translation 必须是 english 的自然中文整句翻译，不要 Markdown 加粗，不要解释“交易台含义”。
@@ -194,6 +201,9 @@ jobs:
                       raise ValueError(f"Entry {idx} title format is invalid: {title}")
                   if not re.search(r"[A-Za-z]", head) or re.search(r"[\u4e00-\u9fff]", head):
                       raise ValueError(f"Entry {idx} title must start with the English expression: {title}")
+                  for pattern in BANNED_TITLE_PATTERNS:
+                      if re.search(pattern, head.lower()):
+                          raise ValueError(f"Entry {idx} title is too generic for FICC desk: {title}")
                   if "**" not in english:
                       raise ValueError(f"Entry {idx} missing bold term")
                   if len(translation) < 12 or "**" in translation or "交易台含义" in translation:
