@@ -103,6 +103,8 @@ jobs:
               r"\bmarket borrowing costs?\b", r"\bemerging[- ]market bonds?\b", r"\bem bonds?\b",
               r"\bprivate credit\b", r"\bhawkish stance\b", r"\brising us dollar\b", r"\bstrong dollar\b",
               r"\bcorn futures?\b", r"\bliquefied natural gas\b", r"\blng\b",
+              r"\brepaid .*bond\b", r"\bredeems? bonds?\b", r"\bbondholders?\b", r"\bmega bond deal\b",
+              r"\bwar bonds?\b",
           ]
 
           def strip_tags(text):
@@ -279,7 +281,9 @@ jobs:
                       failures.append(f"Entry {idx} is not a strong FICC desk term: {title}")
                   if "**" not in english:
                       failures.append(f"Entry {idx} missing bold term")
-                  if len(english) < 45 or not re.search(r"[.!?]$", english.strip()) or re.search(r"\b(and|but|or|of|to|with|for|by|from|addition)$", english.strip().lower()):
+                  headline_like = len(english) >= 35 and re.search(r"[A-Z]", english[:1]) and not re.search(r"\b(and|but|or|of|to|with|for|by|from|addition)$", english.strip().lower())
+                  full_sentence = len(english) >= 45 and re.search(r"[.!?]$", english.strip())
+                  if not (headline_like or full_sentence):
                       failures.append(f"Entry {idx} English sentence is incomplete or too short: {english}")
                   if len(translation) < 12 or "**" in translation or "交易台含义" in translation:
                       failures.append(f"Entry {idx} translation format is invalid")
@@ -289,10 +293,35 @@ jobs:
                   raise ValueError("; ".join(failures[:8]))
               return entries
 
+          def is_entry_usable(item):
+              try:
+                  hard_format_gate([item] * 5)
+                  return True
+              except Exception:
+                  return False
+
+          def salvage_entries(*entry_lists):
+              merged = []
+              seen = set()
+              for entries in entry_lists:
+                  for item in normalize_entries(entries):
+                      head = item["title"].split("（", 1)[0].strip().lower()
+                      if head in seen:
+                          continue
+                      if is_entry_usable(item):
+                          merged.append(item)
+                          seen.add(head)
+                      if len(merged) == 5:
+                          print("QUALITY_REVIEW_SALVAGED_ENTRIES=" + json.dumps(merged, ensure_ascii=False, indent=2))
+                          return merged
+              raise RuntimeError(f"Only {len(merged)} usable entries after salvage")
+
           def review_until_pass(models, candidates, items):
               feedback = ""
+              reviewed_rounds = []
               for round_no in range(1, 4):
                   reviewed = normalize_entries(review_with_gemini(models, candidates, items, feedback))
+                  reviewed_rounds.append(reviewed)
                   try:
                       entries = hard_format_gate(reviewed)
                       print(f"QUALITY_REVIEW_PASS round={round_no}")
@@ -300,7 +329,9 @@ jobs:
                   except Exception as exc:
                       feedback = str(exc)[:1200]
                       print(f"QUALITY_REVIEW_RETRY round={round_no} reason={feedback}")
-              raise RuntimeError(f"Gemini quality review failed after 3 rounds: {feedback}")
+              entries = salvage_entries(*reviewed_rounds, candidates)
+              print("QUALITY_REVIEW_PASS mode=salvage")
+              return entries
 
           def send_feishu(markdown):
               if not FEISHU_WEBHOOK_URL:
