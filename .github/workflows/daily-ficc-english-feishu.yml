@@ -86,7 +86,7 @@ jobs:
               r"^volatility$", r"^pressure$", r"^concerns?$", r"^support$", r"^weigh on$",
               r"^ipo$", r"^us ipo$", r"^investment bust$", r"^debt-binge$",
               r"^dollars purchases?$", r"^rate of interest$", r"^weaker peso$", r"^oil pared early gains$",
-              r"^sovereign funds?$", r"^private credit$",
+              r"^sovereign funds?$",
           ]
 
           FICC_TERM_PATTERNS = [
@@ -99,6 +99,10 @@ jobs:
               r"\bbackwardation\b", r"\bcontango\b", r"\bcrack spreads?\b", r"\breverse repo\b",
               r"\bcash rate target\b", r"\bpolicy rate\b", r"\bterminal rate\b", r"\brate path\b",
               r"\brate cuts?\b", r"\brate hikes?\b", r"\bcentral bank liquidity\b",
+              r"\bovernight liquidity tool\b", r"\bovernight rate\b", r"\bde facto rate cut\b",
+              r"\bmarket borrowing costs?\b", r"\bemerging[- ]market bonds?\b", r"\bem bonds?\b",
+              r"\bprivate credit\b", r"\bhawkish stance\b", r"\brising us dollar\b", r"\bstrong dollar\b",
+              r"\bcorn futures?\b", r"\bliquefied natural gas\b", r"\blng\b",
           ]
 
           def strip_tags(text):
