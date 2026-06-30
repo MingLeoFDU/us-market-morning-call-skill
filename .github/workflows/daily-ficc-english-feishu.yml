@@ -126,7 +126,8 @@ jobs:
               r"\bprivate credit\b", r"\bhawkish stance\b", r"\brising us dollar\b", r"\bstrong dollar\b",
               r"\bcorn futures?\b", r"\bliquefied natural gas\b", r"\blng\b",
               r"\brepaid .*bond\b", r"\bredeems? bonds?\b", r"\bbondholders?\b", r"\bmega bond deal\b",
-              r"\bwar bonds?\b",
+              r"\bwar bonds?\b", r"\bnet (sellers?|buyers?|long|short)\b", r"\bmoney[- ]market\b",
+              r"\bdebt restructuring\b", r"\boil (glut|oversupply|shortage)\b",
           ]
 
           def strip_tags(text):
@@ -289,8 +290,9 @@ jobs:
               failures = []
               title, english, translation = item["title"], item["english"], item["translation"]
               source, source_url = item.get("source", ""), item.get("source_url", "")
-              head = title.split("（", 1)[0].strip()
-              if not title or "（" not in title or "）" not in title:
+              # Accept both fullwidth （） and ASCII () parentheses
+              head = re.split(r"[（(]", title, 1)[0].strip()
+              if not title or not re.search(r"[（(]", title) or not re.search(r"[)）]", title):
                   failures.append(f"Entry {idx} title format is invalid: {title}")
               if not re.search(r"[A-Za-z]", head) or re.search(r"[\u4e00-\u9fff]", head):
                   failures.append(f"Entry {idx} title must start with the English expression: {title}")
@@ -339,7 +341,7 @@ jobs:
               seen = set()
               for entries in entry_lists:
                   for item in normalize_entries(entries):
-                      head = item["title"].split("（", 1)[0].strip().lower()
+                      head = re.split(r"[（(]", item["title"], 1)[0].strip().lower()
                       if head in seen:
                           continue
                       if is_entry_usable(item):
