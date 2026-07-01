@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
+"""Single entry point for the FICC daily Feishu push.
+
+Usage:
+  python daily_ficc_push/send_feishu_daily_ficc_card.py [--date YYYY-MM-DD] [--force] [--dry-run] [--from-output DIR]
+"""
+import argparse
 import json
 from pathlib import Path
-import argparse
 
 from daily_rates_push import build_daily_bundle, build_feishu_card, build_message, json_safe, post_feishu
 
@@ -19,11 +24,11 @@ def has_complete_daily_payload(payload: dict) -> bool:
 
 
 def main():
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(description="Generate and send FICC daily Feishu card")
     parser.add_argument("--date", help="YYYY-MM-DD or YYYYMMDD; default=today in Asia/Shanghai")
     parser.add_argument("--force", action="store_true", help="run even if today is not a trading day")
     parser.add_argument("--from-output", help="send from an existing daily_ficc_push/outputs/YYYYMMDD directory")
-    parser.add_argument("--dry-run", action="store_true", help="load or build the message without sending Feishu")
+    parser.add_argument("--dry-run", action="store_true", help="generate files without sending Feishu message")
     args = parser.parse_args()
 
     if args.from_output:
@@ -53,6 +58,7 @@ def main():
 
     result = {"posted": False, "reason": "dry-run"} if args.dry_run else post_feishu(text, card)
     (out_dir / "feishu_result.json").write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(text)
     print(json.dumps(result, ensure_ascii=False, indent=2))
 
 

@@ -5,7 +5,7 @@ This folder runs the FICC money-market and rates-bond daily push.
 ## Daily Run
 
 ```bash
-python daily_ficc_push/run_daily_ficc_agent.py
+python daily_ficc_push/send_feishu_daily_ficc_card.py
 ```
 
 The runner checks whether today is a trading day, builds local artifacts under

@@ -285,9 +285,9 @@ function buildSignals(sections) {
 
   const factors = [
     ["利率", Math.abs(parseBp(rates["US 10Y"]?.day)) + Math.abs(parseBp(rates["US 2Y"]?.day))],
-    ["美元", Math.abs(parsePct(rates.DXY?.day)) + Math.abs(parsePct(rates.USDCNH?.day))],
+    ["美元", Math.abs(parsePct(rates.DXY?.day)) + Math.abs(parsePct(rates.USDCNY?.day))],
     ["通胀", Math.abs(parsePct(comm.WTI原油?.day)) + Math.abs(parsePct(comm.铜?.day)) + Math.abs(parseBp(rates["10Y通胀预期"]?.day))],
-    ["中国资产", Math.abs(parsePct(china.恒生科技?.day)) + Math.abs(parsePct(china.KWEB?.day)) + Math.abs(parsePct(china.沪深300?.day))],
+    ["中国资产", Math.abs(parsePct(china.恒生科技ETF?.day)) + Math.abs(parsePct(china.KWEB?.day)) + Math.abs(parsePct(china.沪深300?.day))],
     ["信用", Math.abs(parsePct(us.HYG?.day)) + Math.abs(parsePct(us.LQD?.day)) + Math.abs(parsePct(us.MOVE?.day))],
   ].sort((a, b) => b[1] - a[1]);
   const dominantFactor = factors[0]?.[0] || "混合";

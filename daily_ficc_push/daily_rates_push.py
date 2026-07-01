@@ -37,13 +37,13 @@ CURVE_SYMBOLS = {
     "进出口": "政策性金融债(进出口行)",
 }
 CURVE_TERMS = [1, 3, 5, 7, 10, 20, 30]
-FONT_CN = "/Users/lxm/Library/Fonts/楷体_GB2312.ttf"
-FONT_CN_FALLBACK = "/System/Library/Fonts/Supplemental/Songti.ttc"
-FONT_EN = "/System/Library/Fonts/Supplemental/Arial.ttf"
-FONT_EN_BOLD = "/System/Library/Fonts/Supplemental/Arial Bold.ttf"
-LINUX_FONT_CN = "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc"
-LINUX_FONT_EN = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
-LINUX_FONT_EN_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+FONT_CN = "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc"
+FONT_CN_FALLBACK = "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"
+FONT_EN = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+FONT_EN_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+LOCAL_FONT_CN = str(Path.home() / "Library/Fonts/楷体_GB2312.ttf")
+LOCAL_FONT_EN = "/System/Library/Fonts/Supplemental/Arial.ttf"
+LOCAL_FONT_EN_BOLD = "/System/Library/Fonts/Supplemental/Arial Bold.ttf"
 
 
 def ymd(date_like) -> str:
@@ -344,14 +344,14 @@ def build_active_bond_sections(payload: dict) -> list[dict]:
 
 
 def cn_font(size: int):
-    for path in [FONT_CN, FONT_CN_FALLBACK, LINUX_FONT_CN, LINUX_FONT_EN]:
+    for path in [FONT_CN, FONT_CN_FALLBACK, LOCAL_FONT_CN, FONT_EN]:
         if Path(path).exists():
             return ImageFont.truetype(path, size)
     return ImageFont.load_default()
 
 
 def en_font(size: int, bold: bool = False):
-    candidates = [FONT_EN_BOLD, LINUX_FONT_EN_BOLD, FONT_EN, LINUX_FONT_EN] if bold else [FONT_EN, LINUX_FONT_EN]
+    candidates = [FONT_EN_BOLD, LOCAL_FONT_EN_BOLD, FONT_EN, LOCAL_FONT_EN] if bold else [FONT_EN, LOCAL_FONT_EN]
     for path in candidates:
         if Path(path).exists():
             return ImageFont.truetype(path, size)
@@ -466,12 +466,9 @@ def build_report_image(payload: dict, out_path: Path) -> Path:
     repo = {x["term"]: x for x in payload["repo_fixing"]["items"]}
     shibor = {x["term"]: x for x in payload["shibor"]["items"]}
     money_rows = [
-        ("银行间", "拆借", "7D", 1.37, 0, 118, 16),
         ("银行间", "回购", "1D", repo["FR001"]["rate"], repo["FR001"]["change_bp"], 17671, -2181),
         ("银行间", "回购", "7D", repo["FR007"]["rate"], repo["FR007"]["change_bp"], 1582, 77),
         ("银行间", "回购", "14D", repo["FR014"]["rate"], repo["FR014"]["change_bp"], 54, 33),
-        ("银行间", "回购", "21D", 1.37, -2, 1, 1),
-        ("银行间", "回购", "1M", 1.32, 2, 3, 1),
         ("银行间", "shibor", "1M", shibor["1M"]["rate"], shibor["1M"]["change_bp"], "", ""),
         ("银行间", "shibor", "3M", shibor["3M"]["rate"], shibor["3M"]["change_bp"], "", ""),
         ("银行间", "shibor", "6M", shibor["6M"]["rate"], shibor["6M"]["change_bp"], "", ""),
@@ -506,16 +503,15 @@ def build_report_image(payload: dict, out_path: Path) -> Path:
         draw.line((vx, y, vx, y + total_h), fill=line, width=1 if vx not in (x + cols[0], x + cols[0] + cols[1]) else 2)
     for i in range(len(money_rows) + 1):
         yy = body_y + i * row_h
-        if i in (1, 6, 11):
+        if i in (3, 8):
             draw.line((x + cols[0], yy, x + table_w, yy), fill=line, width=2)
         else:
             draw.line((x + cols[0] + cols[1], yy, x + table_w, yy), fill="#d9d9d9", width=1)
-    cell_text(x, body_y, cols[0], row_h * 11, "银行间", 24, "#333333", False)
-    cell_text(x, body_y + row_h * 11, cols[0], row_h * 2, "交易所", 24, "#333333", False)
-    cell_text(x + cols[0], body_y, cols[1], row_h, "拆借", 24, "#333333", True)
-    cell_text(x + cols[0], body_y + row_h, cols[1], row_h * 5, "回购", 24, "#333333", True)
-    cell_text(x + cols[0], body_y + row_h * 6, cols[1], row_h * 5, "shibor", 24, "#333333", True)
-    cell_text(x + cols[0], body_y + row_h * 11, cols[1], row_h * 2, "回购", 24, "#333333", True)
+    cell_text(x, body_y, cols[0], row_h * 8, "银行间", 24, "#333333", False)
+    cell_text(x, body_y + row_h * 8, cols[0], row_h * 2, "交易所", 24, "#333333", False)
+    cell_text(x + cols[0], body_y, cols[1], row_h * 3, "回购", 24, "#333333", True)
+    cell_text(x + cols[0], body_y + row_h * 3, cols[1], row_h * 5, "shibor", 24, "#333333", True)
+    cell_text(x + cols[0], body_y + row_h * 8, cols[1], row_h * 2, "回购", 24, "#333333", True)
 
     y = y + total_h + 40
     draw.line((margin, y - 14, width - margin, y - 14), fill="#b78b6f", width=2)
@@ -535,6 +531,8 @@ def build_report_image(payload: dict, out_path: Path) -> Path:
         cell_text(x + sum(cols2[:i]), y, cols2[i], head_h, h, 20, "#ffffff", True)
 
     terms = ["1Y", "3Y", "5Y", "7Y", "10Y", "20Y", "30Y"]
+    # NOTE: bond codes and remaining terms below are illustrative and need periodic manual updates.
+    # The yield data itself comes from payload["curves"] (fetched dynamically via akshare).
     codes = {
         "国债": ["260009", "260011", "250014", "260007", "260005", "", "260002"],
         "国开债": ["250202", "240203", "250208", "210210", "250220", "210220", ""],

@@ -133,17 +133,48 @@ function buildCard(data) {
   };
 }
 
+async function sendToFeishu(webhook, payload) {
+  let lastError;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const res = await fetch(webhook, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const body = await res.text();
+      if (res.ok) {
+        try {
+          const json = JSON.parse(body);
+          if (json.code === 0 || json.StatusCode === 0) {
+            console.log(`Feishu send OK (attempt ${attempt})`);
+            return body;
+          }
+          lastError = new Error(`Feishu code ${json.code}: ${body}`);
+        } catch {
+          console.log(body);
+          return body;
+        }
+      } else {
+        lastError = new Error(`Feishu webhook failed: ${res.status} ${body}`);
+      }
+    } catch (error) {
+      lastError = error;
+    }
+    if (attempt < 3) {
+      const delay = Math.min(4000, 1000 * Math.pow(2, attempt - 1));
+      console.log(`Attempt ${attempt} failed, retrying in ${delay}ms...`);
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+  throw lastError;
+}
+
 async function main() {
   const webhook = required(env("FEISHU_WEBHOOK_URL"), "FEISHU_WEBHOOK_URL");
   const dataPath = path.resolve(required(arg("data"), "--data"));
   const data = JSON.parse(fs.readFileSync(dataPath, "utf8"));
-  const res = await fetch(webhook, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ msg_type: "interactive", card: buildCard(data) }),
-  });
-  const body = await res.text();
-  if (!res.ok) throw new Error(`Feishu webhook failed: ${res.status} ${body}`);
+  const body = await sendToFeishu(webhook, { msg_type: "interactive", card: buildCard(data) });
   console.log(body);
 }
 

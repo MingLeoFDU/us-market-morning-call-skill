@@ -3,8 +3,8 @@ name: Daily Feishu Morning Call
 on:
   workflow_dispatch:
   schedule:
-    # 06:30 New York time during US daylight time.
-    # GitHub cron is UTC; remove the in-job time gate to avoid delayed runs being skipped.
+    # 10:30 UTC = 06:30 New York (US DST) / 18:30 Beijing.
+    # Same UTC slot as daily-ficc-feishu.yml but different market focus (US vs CN).
     - cron: "30 10 * * 1-5"
 
 jobs:

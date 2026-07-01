@@ -3,3 +3,5 @@ data/
 .DS_Store
 __pycache__/
 *.pyc
+daily_ficc_push/outputs/
+.ficc_english_sent_marker/

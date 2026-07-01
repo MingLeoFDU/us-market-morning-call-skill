@@ -3,7 +3,8 @@ name: Daily FICC Feishu
 on:
   workflow_dispatch:
   schedule:
-    # 18:30 Asia/Shanghai, Monday-Friday.
+    # 10:30 UTC = 18:30 Asia/Shanghai (after China market close at 15:00).
+    # Same UTC slot as daily-feishu.yml but different market focus (CN rates vs US macro).
     - cron: "30 10 * * 1-5"
 
 jobs:
@@ -28,7 +29,7 @@ jobs:
       - name: Generate and send FICC daily
         env:
           FEISHU_WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK_URL }}
-        run: python daily_ficc_push/run_daily_ficc_agent.py
+        run: python daily_ficc_push/send_feishu_daily_ficc_card.py
 
       - name: Upload FICC artifacts
         if: always()
