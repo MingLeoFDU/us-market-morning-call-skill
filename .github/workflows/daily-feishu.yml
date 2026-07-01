@@ -24,6 +24,7 @@ jobs:
       - name: Generate and send Macro Daily Signal
         env:
           ANALYST: ${{ vars.ANALYST || 'Leo' }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           FEISHU_WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK_URL }}
           FEISHU_APP_ID: ${{ secrets.FEISHU_APP_ID }}
           FEISHU_APP_SECRET: ${{ secrets.FEISHU_APP_SECRET }}

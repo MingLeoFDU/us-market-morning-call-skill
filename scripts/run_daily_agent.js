@@ -25,6 +25,21 @@ if (!process.env.FEISHU_WEBHOOK_URL) {
 }
 
 run("Fetch macro signal data", ["scripts/fetch_macro_signal_data.js", "--out", macroDataPath]);
+
+// Generate AI-powered commentary using Gemini; falls back to hardcoded text if unavailable.
+if (process.env.GEMINI_API_KEY) {
+  const aiResult = spawnSync(process.execPath, ["scripts/generate_ai_commentary.js", "--data", macroDataPath], {
+    cwd: root,
+    stdio: "inherit",
+    env: process.env,
+  });
+  if (aiResult.status !== 0) {
+    console.log("AI commentary generation failed (exit " + aiResult.status + "), falling back to hardcoded text.");
+  }
+} else {
+  console.log("GEMINI_API_KEY not set, using hardcoded commentary text.");
+}
+
 run("Render macro signal markdown", ["scripts/render_macro_signal_markdown.js", "--data", macroDataPath, "--out", macroMarkdownPath]);
 run("Send Feishu macro signal card", ["scripts/send_feishu_macro_signal_card.js", "--data", macroDataPath]);
 
