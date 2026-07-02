@@ -34,12 +34,62 @@ function render(data) {
   const china = data.sections.china;
   const global = data.sections.commoditiesGlobal;
   const text = data.text;
+
+  // Narrative section
+  const narrativeBlock = text.narrative
+    ? `
+**主线叙事：${text.narrative.theme}**
+叙事强度：${text.narrative.strength}
+跟随资产：${text.narrative.assetsFollowing.map((a) => `${a.asset} ${a.move}`).join(" / ")}
+${text.narrative.assetsDiverging?.length > 0 ? "背离资产：" + text.narrative.assetsDiverging.map((a) => `${a.asset} ${a.move}`).join(" / ") : ""}
+交易含义：${text.narrative.implication}
+`
+    : "";
+
+  // Economic surprise section
+  const econBlock = (data.econSurprise || []).length > 0
+    ? `
+六、经济数据超预期方向
+${data.econSurprise.map((e) => `- ${e.name}：${e.direction}（最新 ${e.latestValue}，vs 3M均值偏离 ${e.surprisePct}%）`).join("\n")}
+`
+    : "";
+
+  // CFTC positioning section
+  const cftcBlock = (data.cftcPositions || []).filter((c) => c.fetched).length > 0
+    ? `
+七、CFTC仓位信号
+${(text.positioning || []).map((p) => `- ${p}`).join("\n")}
+`
+    : "";
+
+  // Factor rotation section
+  const factorBlock = data.factorRotation && Object.keys(data.factorRotation).length > 0
+    ? `
+八、因子轮动
+${(text.factorRotation || []).map((f) => `- ${f}`).join("\n")}
+${Object.entries(data.factorRotation).map(([group, factors]) => {
+    const label = group === "equityStyle" ? "权益风格" : group === "ficcCarry" ? "FICC因子" : "跨资产主题";
+    return `**${label}**\n${factors.map((f) => `${f.name}(${f.long}/${f.short})：日 ${f.day} 周 ${f.week} 月 ${f.month} → ${f.direction}`).join("\n")}`;
+  }).join("\n")}
+`
+    : "";
+
+  // Event calendar section
+  const eventBlock = data.eventCalendar
+    ? `
+九、本周关注
+${data.eventCalendar.thisWeek.map((e) => `- ${e.date}：${e.event}（${e.importance}）`).join("\n")}
+**本月后续**
+${(data.eventCalendar.thisMonthBeyondWeek || []).slice(0, 8).map((e) => `- ${e.date}：${e.event}（${e.importance}）`).join("\n")}
+`
+    : "";
+
   return `【Macro Daily Signal｜${data.date}】
 
 今日简评：
 今日宏观焦点为【${text.focus}】。
 市场主要交易【${text.trade}】。
-
+${narrativeBlock}
 风险偏好：${data.signals.riskPreference}
 主导因子：${data.signals.dominantFactor}
 交易质量：${data.signals.tradeQuality}
@@ -110,7 +160,7 @@ ${block([
 
 后续观察：
 ${text.watchList.map((item, index) => `${index + 1}. ${item}`).join("\n")}
-
+${econBlock}${cftcBlock}${factorBlock}${eventBlock}
 数据源：
 - ${data.sources.market}
 - ${data.sources.rates}

@@ -184,11 +184,21 @@ def normalize_entries(entries):
 def generate_candidates(models, items):
     compact = [{"id": i, "source": x["source"], "headline": x["title"][:220], "summary": x["summary"][:360], "url": x["url"]} for i, x in enumerate(items[:60], 1)]
     prompt = f"""
-    你是外资行 FICC trading desk 的英语教练。请从最新英文财经新闻中挑选 exactly 12 个候选表达。候选必须是FICC desk高频表达：定价变量、曲线、利差、基差、久期、融资、套保、仓位、发行、主权信用、商品期限结构。
-    候选必须优先来自 rates, FX, credit, commodities, funding, curve, swaps, basis, duration, spreads, issuance, liquidity, positioning, hedging, central-bank reaction function。
-    可以包括 USD/JPY intervention、rate-cut bets、Treasury yields、private placements、swap spreads、cross-currency basis、sovereign rating、gilts 等真实交易台表达。
-    严禁泛词或泛宏观词：higher/lower interest rates, interest rates, markets, investors, inflation, growth, policy, data, volatility, pressure, concerns, support, weigh on, IPO, investment bust, debt-binge。
+    你是外资行 FICC trading desk 的英语教练。请从最新英文财经新闻中挑选 exactly 12 个候选表达。
+    
+    候选必须是FICC desk高频表达：定价变量、曲线、利差、基差、久期、融资、套保、仓位、发行、主权信用、商品期限结构。
+    优先来自 rates, FX, credit, commodities, funding, curve, swaps, basis, duration, spreads, issuance, liquidity, positioning, hedging, central-bank reaction function。
+    
+    每个候选必须同时满足以下 4 个维度：
+    1. **交易含义**：该表达必须隐含一个具体的交易方向或策略判断（如"rate-cut bets"→做多前端利率期货、"curve steepening"→2s10s做陡、"swap spread tightening"→收swap spread）。
+    2. **语境丰富**：english 字段必须是一句完整、自然的英文原文，展现该表达在真实交易台对话/morning note中的用法，而非生硬的教科书句。
+    3. **中文翻译质量**：translation 必须是 english 的自然流畅中文整句翻译，金融术语使用业内通行译法，不要机械翻译。
+    4. **来源可靠**：source 和 source_url 必须来自 Candidates 或 News items。
+
     title 格式必须为：英文表达（准确中文译名）。括号外必须是英文，不允许中文开头；括号内必须是中文译名。
+    
+    严禁泛词：higher/lower interest rates, interest rates, markets, investors, inflation, growth, policy, data, volatility, pressure, concerns, support, weigh on, IPO。
+    
     输出只允许 JSON array。每项 schema: {{"title":"英文表达（准确中文译名）","english":"... **英文表达** ...","translation":"整句中文翻译","source":"媒体名","source_url":"链接"}}
     News items: {json.dumps(compact, ensure_ascii=False)}
     """
@@ -197,16 +207,18 @@ def generate_candidates(models, items):
 def review_with_gemini(models, candidates, items, feedback=""):
     compact = [{"id": i, "source": x["source"], "headline": x["title"][:220], "summary": x["summary"][:300], "url": x["url"]} for i, x in enumerate(items[:60], 1)]
     prompt = f"""
-    你现在是外资行 FICC trading desk 的 senior editor 和质量审查员。请严格审查候选表达，必要时直接重写，输出最终 exactly 5 条；宁可重写也不要保留弱项。
-    质量标准：
-    1. 必须是FICC desk能直接用于morning meeting、trader chat或sales note的表达。
-    2. 优先选择 rate-cut bets、front-end pricing、curve steepening/flattening、swap spreads、cross-currency basis、carry/roll-down、duration、term premium、risk premium、Treasury/gilt/Bund yields、repo/funding squeeze、new-issue concession、credit spreads、CDS、private placements、FX intervention、backwardation/contango/crack spreads。直接淘汰 higher/lower interest rates、interest rates、inflation、growth、policy、data、volatility、markets、investors、IPO、investment bust、debt-binge。
-    3. title 格式必须为：英文表达（准确中文译名）。括号外必须是英文，不允许中文开头；括号内必须是中文译名。
-    4. english 必须是一句完整英文原文或忠于原文的近原文，并用 Markdown **加粗**命中的英文表达；不得截断，不得以 but/and/or/of/to/with 等词结尾。
-    5. translation 必须是 english 的自然中文整句翻译，不要 Markdown 加粗，不要解释“交易台含义”。
-    6. source 和 source_url 必须来自 Candidates 或 News items，不能丢失链接，不能写 Market news。
-    7. 优先保留更贴近 FICC desk 的表达；如候选不足，可从 News items 中重新挑选。
-    8. 输出只允许 JSON array，不要解释。
+    你是外资行 FICC trading desk 的 senior editor 和质量审查员。请严格审查候选表达，必要时直接重写，输出最终 exactly 5 条；宁可重写也不要保留弱项。
+    
+    质量标准（必须全部满足）：
+    1. 交易含义：必须是FICC desk能直接用于morning meeting、trader chat或sales note的表达。每个表达必须隐含一个具体交易方向或策略判断，不能是纯术语名词。例如"rate-cut bets"→做多前端利率、"curve steepening"→做陡曲线、"swap spread tightening"→收利差、"funding squeeze"→融资收紧→做短久期。
+    2. FICC精准度：优先 rate-cut bets, front-end pricing, curve steepening/flattening, swap spreads, cross-currency basis, carry/roll-down, duration, term premium, risk premium, Treasury/gilt/Bund yields, repo/funding squeeze, new-issue concession, credit spreads, CDS, private placements, FX intervention, backwardation/contango/crack spreads。直接淘汰泛词。
+    3. title 格式：英文表达（准确中文译名）。括号外英文，括号内中文译名。
+    4. english 质量：一句完整英文原文或忠于原文的近原文，**加粗**命中的英文表达。不得截断，不得以 but/and/or/of/to/with 等结尾。必须展现该表达在真实交易台对话中的用法。
+    5. translation 质量：english 的自然流畅中文整句翻译，金融术语用业内通行译法，不要 Markdown 加粗，不要解释"交易台含义"。
+    6. source/source_url：必须来自 Candidates 或 News items，不能丢失链接。
+    7. 优先保留更有交易含义的表达；如候选不足，可从 News items 中重新挑选。
+    
+    输出只允许 JSON array，不要解释。
     上一轮机器质检失败原因（如有）：{feedback}
     Candidates: {json.dumps(candidates, ensure_ascii=False)}
     News items: {json.dumps(compact, ensure_ascii=False)}

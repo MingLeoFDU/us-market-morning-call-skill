@@ -58,6 +58,65 @@ function buildCard(data) {
   const china = data.sections.china;
   const global = data.sections.commoditiesGlobal;
   const text = data.text;
+
+  // Build narrative section
+  const narrativeSection = text.narrative
+    ? [
+        {
+          tag: "markdown",
+          content: [
+            `**主线叙事：${text.narrative.theme}**（${text.narrative.strength}）`,
+            `跟随：${text.narrative.assetsFollowing.map((a) => `${a.asset} ${a.move}`).join(" / ")}`,
+            text.narrative.assetsDiverging?.length > 0 ? `背离：${text.narrative.assetsDiverging.map((a) => `${a.asset} ${a.move}`).join(" / ")}` : "",
+            `含义：${text.narrative.implication}`,
+          ].filter(Boolean).join("\n"),
+        },
+        { tag: "hr" },
+      ]
+    : [];
+
+  // Build economic surprise section
+  const econSurpriseSection = (data.econSurprise || []).length > 0
+    ? [
+        ...bullet("六、经济数据超预期", data.econSurprise.map((e) => `${e.name}：${e.direction}（偏离 ${e.surprisePct}%）`)),
+      ]
+    : [];
+
+  // Build CFTC positioning section
+  const cftcSection = (text.positioning || []).length > 0
+    ? [
+        ...bullet("七、仓位信号", text.positioning),
+      ]
+    : [];
+
+  // Build factor rotation section
+  const factorElements = [];
+  if (data.factorRotation && Object.keys(data.factorRotation).length > 0) {
+    // AI summary points first
+    if (text.factorRotation && text.factorRotation.length > 0) {
+      factorElements.push(...bullet("八、因子轮动要点", text.factorRotation));
+    }
+    // Then detailed factor tables
+    for (const [group, factors] of Object.entries(data.factorRotation)) {
+      const label = group === "equityStyle" ? "权益风格" : group === "ficcCarry" ? "FICC因子" : "跨资产主题";
+      factorElements.push({
+        tag: "markdown",
+        content: `**${label}**\n${factors.map((f) => `${f.name}：日 ${f.day} 周 ${f.week} → ${f.direction}`).join("\n")}`,
+      });
+      factorElements.push({ tag: "hr" });
+    }
+  }
+
+  // Build event calendar section
+  const eventSection = data.eventCalendar && data.eventCalendar.thisWeek.length > 0
+    ? [
+        ...bullet("本周关注", data.eventCalendar.thisWeek.map((e) => `${e.date} ${e.event}（${e.importance}）`)),
+        ...(data.eventCalendar.thisMonthBeyondWeek || []).length > 0
+          ? bullet("本月后续", data.eventCalendar.thisMonthBeyondWeek.slice(0, 8).map((e) => `${e.date} ${e.event}（${e.importance}）`))
+          : [],
+      ]
+    : [];
+
   return {
     config: { wide_screen_mode: true },
     header: {
@@ -74,6 +133,7 @@ function buildCard(data) {
         ].join("\n"),
       },
       { tag: "hr" },
+      ...narrativeSection,
       ...bullet("交易逻辑", text.logic),
       ...bullet("后续判断", text.outlook),
       ...section("一、美股与风险", [
@@ -120,12 +180,16 @@ function buildCard(data) {
       ]),
       ...bullet("五、跨资产信号", Object.entries(text.crossAsset).map(([key, value]) => `${key}：${value}`)),
       ...bullet("后续观察", text.watchList),
+      ...econSurpriseSection,
+      ...cftcSection,
+      ...factorElements,
+      ...eventSection,
       {
         tag: "note",
         elements: [
           {
             tag: "plain_text",
-            content: "数据源：Yahoo Finance chart API + FRED + 新闻RSS。已剔除中国利率、DR007、铁矿石等不稳定字段。仅供投研参考。",
+            content: "数据源：Yahoo Finance + FRED + CFTC + 新闻RSS。仅供投研参考。",
           },
         ],
       },
