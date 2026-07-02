@@ -58,56 +58,45 @@ function buildCard(data) {
   const china = data.sections.china;
   const global = data.sections.commoditiesGlobal;
   const text = data.text;
+  const narrative = text.narrative || {};
 
-  // Build narrative section
-  const narrativeSection = text.narrative
+  // Unified narrative opening (replaces focus + trade + separate narrative)
+  const narrativeContent = narrative.theme
     ? [
-        {
-          tag: "markdown",
-          content: [
-            `**主线叙事：${text.narrative.theme}**（${text.narrative.strength}）`,
-            `跟随：${text.narrative.assetsFollowing.map((a) => `${a.asset} ${a.move}`).join(" / ")}`,
-            text.narrative.assetsDiverging?.length > 0 ? `背离：${text.narrative.assetsDiverging.map((a) => `${a.asset} ${a.move}`).join(" / ")}` : "",
-            `含义：${text.narrative.implication}`,
-          ].filter(Boolean).join("\n"),
-        },
+        `**今日主线：${narrative.theme}**（${narrative.strength}）`,
+        `跟随：${(narrative.assetsFollowing || []).map((a) => `${a.asset} ${a.move}`).join(" / ")}${narrative.assetsDiverging?.length > 0 ? "　背离：" + narrative.assetsDiverging.map((a) => `${a.asset} ${a.move}`).join(" / ") : ""}`,
+        `→ ${narrative.implication || ""}`,
+      ].filter(Boolean).join("\n")
+    : "";
+
+  const headerElements = narrativeContent
+    ? [
+        { tag: "markdown", content: narrativeContent },
         { tag: "hr" },
       ]
     : [];
 
-  // Build economic surprise section
+  // Economic surprise section
   const econSurpriseSection = (data.econSurprise || []).length > 0
     ? [
         ...bullet("六、经济数据超预期", data.econSurprise.map((e) => `${e.name}：${e.direction}（偏离 ${e.surprisePct}%）`)),
       ]
     : [];
 
-  // Build CFTC positioning section
-  const cftcSection = (text.positioning || []).length > 0
-    ? [
-        ...bullet("七、仓位信号", text.positioning),
-      ]
-    : [];
-
-  // Build factor rotation section
+  // Factor rotation: only raw data tables (no AI summary)
   const factorElements = [];
   if (data.factorRotation && Object.keys(data.factorRotation).length > 0) {
-    // AI summary points first
-    if (text.factorRotation && text.factorRotation.length > 0) {
-      factorElements.push(...bullet("八、因子轮动要点", text.factorRotation));
-    }
-    // Then detailed factor tables
     for (const [group, factors] of Object.entries(data.factorRotation)) {
       const label = group === "equityStyle" ? "权益风格" : group === "ficcCarry" ? "FICC因子" : "跨资产主题";
       factorElements.push({
         tag: "markdown",
-        content: `**${label}**\n${factors.map((f) => `${f.name}：日 ${f.day} 周 ${f.week} → ${f.direction}`).join("\n")}`,
+        content: `**八、因子轮动 · ${label}**\n${factors.map((f) => `${f.name}：日 ${f.day} 周 ${f.week} → ${f.direction}`).join("\n")}`,
       });
       factorElements.push({ tag: "hr" });
     }
   }
 
-  // Build event calendar section
+  // Event calendar section
   const eventSection = data.eventCalendar && data.eventCalendar.thisWeek.length > 0
     ? [
         ...bullet("本周关注", data.eventCalendar.thisWeek.map((e) => `${e.date} ${e.event}（${e.importance}）`)),
@@ -124,18 +113,14 @@ function buildCard(data) {
       title: { tag: "plain_text", content: `Macro Daily Signal｜${data.date}` },
     },
     elements: [
+      ...headerElements,
       {
         tag: "markdown",
-        content: [
-          `**今日简评**：${text.focus}`,
-          `市场主要交易：**${text.trade}**`,
-          `风险偏好：**${data.signals.riskPreference}**　主导因子：**${data.signals.dominantFactor}**　交易质量：**${data.signals.tradeQuality}**`,
-        ].join("\n"),
+        content: `风险偏好：**${data.signals.riskPreference}**　主导因子：**${data.signals.dominantFactor}**　交易质量：**${data.signals.tradeQuality}**`,
       },
       { tag: "hr" },
-      ...narrativeSection,
-      ...bullet("交易逻辑", text.logic),
-      ...bullet("后续判断", text.outlook),
+      ...bullet("交易逻辑", (text.logic || [])),
+      ...bullet("后续判断", (text.outlook || [])),
       ...section("一、美股与风险", [
         row(us, "S&P 500"),
         row(us, "Nasdaq 100"),
@@ -178,10 +163,9 @@ function buildCard(data) {
         row(global, "STOXX 600"),
         row(global, "MSCI EM"),
       ]),
-      ...bullet("五、跨资产信号", Object.entries(text.crossAsset).map(([key, value]) => `${key}：${value}`)),
-      ...bullet("后续观察", text.watchList),
+      ...bullet("五、跨资产信号", Object.entries(text.crossAsset || {}).map(([key, value]) => `${key}：${value}`)),
+      ...bullet("后续观察", (text.watchList || [])),
       ...econSurpriseSection,
-      ...cftcSection,
       ...factorElements,
       ...eventSection,
       {
@@ -189,7 +173,7 @@ function buildCard(data) {
         elements: [
           {
             tag: "plain_text",
-            content: "数据源：Yahoo Finance + FRED + CFTC + 新闻RSS。仅供投研参考。",
+            content: "数据源：Yahoo Finance + FRED + 新闻RSS。仅供投研参考。",
           },
         ],
       },

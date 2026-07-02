@@ -34,42 +34,22 @@ function render(data) {
   const china = data.sections.china;
   const global = data.sections.commoditiesGlobal;
   const text = data.text;
+  const narrative = text.narrative || {};
 
-  // Narrative section
-  const narrativeBlock = text.narrative
-    ? `
-**主线叙事：${text.narrative.theme}**
-叙事强度：${text.narrative.strength}
-跟随资产：${text.narrative.assetsFollowing.map((a) => `${a.asset} ${a.move}`).join(" / ")}
-${text.narrative.assetsDiverging?.length > 0 ? "背离资产：" + text.narrative.assetsDiverging.map((a) => `${a.asset} ${a.move}`).join(" / ") : ""}
-交易含义：${text.narrative.implication}
-`
+  // Unified narrative opening (replaces separate focus + trade + narrative block)
+  const narrativeLine = narrative.theme
+    ? `**今日主线：${narrative.theme}**（${narrative.strength}）
+跟随：${(narrative.assetsFollowing || []).map((a) => `${a.asset} ${a.move}`).join(" / ")}${narrative.assetsDiverging?.length > 0 ? "　背离：" + narrative.assetsDiverging.map((a) => `${a.asset} ${a.move}`).join(" / ") : ""}
+→ ${narrative.implication || ""}`
     : "";
 
-  // Economic surprise section
-  const econBlock = (data.econSurprise || []).length > 0
-    ? `
-六、经济数据超预期方向
-${data.econSurprise.map((e) => `- ${e.name}：${e.direction}（最新 ${e.latestValue}，vs 3M均值偏离 ${e.surprisePct}%）`).join("\n")}
-`
-    : "";
-
-  // CFTC positioning section
-  const cftcBlock = (data.cftcPositions || []).filter((c) => c.fetched).length > 0
-    ? `
-七、CFTC仓位信号
-${(text.positioning || []).map((p) => `- ${p}`).join("\n")}
-`
-    : "";
-
-  // Factor rotation section
+  // Factor rotation: only raw data tables (no AI summary — it duplicates the tables)
   const factorBlock = data.factorRotation && Object.keys(data.factorRotation).length > 0
     ? `
 八、因子轮动
-${(text.factorRotation || []).map((f) => `- ${f}`).join("\n")}
 ${Object.entries(data.factorRotation).map(([group, factors]) => {
     const label = group === "equityStyle" ? "权益风格" : group === "ficcCarry" ? "FICC因子" : "跨资产主题";
-    return `**${label}**\n${factors.map((f) => `${f.name}(${f.long}/${f.short})：日 ${f.day} 周 ${f.week} 月 ${f.month} → ${f.direction}`).join("\n")}`;
+    return `**${label}**\n${factors.map((f) => `${f.name}(${f.long}/${f.short})：日 ${f.day} 周 ${f.week} → ${f.direction}`).join("\n")}`;
   }).join("\n")}
 `
     : "";
@@ -84,21 +64,25 @@ ${(data.eventCalendar.thisMonthBeyondWeek || []).slice(0, 8).map((e) => `- ${e.d
 `
     : "";
 
+  // Economic surprise section
+  const econBlock = (data.econSurprise || []).length > 0
+    ? `
+六、经济数据超预期方向
+${data.econSurprise.map((e) => `- ${e.name}：${e.direction}（偏离3M均值 ${e.surprisePct}%）`).join("\n")}
+`
+    : "";
+
   return `【Macro Daily Signal｜${data.date}】
 
-今日简评：
-今日宏观焦点为【${text.focus}】。
-市场主要交易【${text.trade}】。
-${narrativeBlock}
-风险偏好：${data.signals.riskPreference}
-主导因子：${data.signals.dominantFactor}
-交易质量：${data.signals.tradeQuality}
+${narrativeLine}
+
+风险偏好：${data.signals.riskPreference}　主导因子：${data.signals.dominantFactor}　交易质量：${data.signals.tradeQuality}
 
 交易逻辑：
-${text.logic.join("\n")}
+${(text.logic || []).join("\n")}
 
 后续判断：
-${text.outlook.join("\n")}
+${(text.outlook || []).join("\n")}
 
 一、美股与风险
 ${block([
@@ -151,22 +135,12 @@ ${block([
 ])}
 
 五、跨资产信号
-股债关系：${text.crossAsset.股债关系}
-美元压力：${text.crossAsset.美元压力}
-信用风险：${text.crossAsset.信用风险}
-商品信号：${text.crossAsset.商品信号}
-中国资产：${text.crossAsset.中国资产}
-波动率：${text.crossAsset.波动率}
+${Object.entries(text.crossAsset || {}).map(([key, value]) => `${key}：${value}`).join("\n")}
 
 后续观察：
-${text.watchList.map((item, index) => `${index + 1}. ${item}`).join("\n")}
-${econBlock}${cftcBlock}${factorBlock}${eventBlock}
-数据源：
-- ${data.sources.market}
-- ${data.sources.rates}
-- 新闻：${data.sources.news.map((item) => item.name).join(" / ")}
-- 已剔除不稳定字段：${(data.sources.removed || data.sources.gaps || []).join("；")}
-- 代理说明：${(data.sources.notes || []).join("；") || "无"}
+${(text.watchList || []).map((item, index) => `${index + 1}. ${item}`).join("\n")}
+${econBlock}${factorBlock}${eventBlock}
+数据源：${data.sources.market} + ${data.sources.rates} + 新闻RSS。仅供投研参考。
 `;
 }
 

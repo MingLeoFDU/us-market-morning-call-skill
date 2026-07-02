@@ -147,7 +147,7 @@ async function geminiJson(models, apiKey, prompt, temperature, stage) {
 
 function fmtRow(row) {
   if (!row || row.value === "n/a") return null;
-  return { name: row.name, value: row.value, day: row.day, week: row.week, month: row.month };
+  return { name: row.name, value: row.value, day: row.day, week: row.week };
 }
 
 function buildDataSummary(data) {
@@ -199,26 +199,22 @@ function buildDataSummary(data) {
 
 function buildPrompt(summary, eventCalendar) {
   const econSection = summary.econSurprise.length > 0
-    ? `\n## 经济数据超预期方向\n${summary.econSurprise.map((e) => `- ${e.name}：最新值 ${e.latestValue}，vs 3M均值偏离 ${e.surprisePct}%，方向：${e.direction}`).join("\n")}`
-    : "";
-
-  const cftcSection = summary.cftcPositions.length > 0
-    ? `\n## CFTC仓位信号\n${summary.cftcPositions.filter((c) => c.fetched).map((c) => `- ${c.asset}：CFTC仓位数据已获取（${c.note || "详见完整数据"}）`).join("\n")}`
+    ? `\n## 经济数据超预期方向\n${summary.econSurprise.map((e) => `- ${e.name}：${e.direction}，偏离3M均值 ${e.surprisePct}%`).join("\n")}`
     : "";
 
   const factorSection = Object.keys(summary.factorRotation).length > 0
-    ? `\n## 因子轮动\n${Object.entries(summary.factorRotation).map(([group, factors]) => {
+    ? `\n## 因子轮动（原始数据）\n${Object.entries(summary.factorRotation).map(([group, factors]) => {
         const label = group === "equityStyle" ? "权益风格" : group === "ficcCarry" ? "FICC因子" : "跨资产主题";
-        return `### ${label}\n${factors.map((f) => `- ${f.name}(${f.long}/${f.short})：日 ${f.day}，周 ${f.week}，月 ${f.month}，方向：${f.direction}`).join("\n")}`;
+        return `### ${label}\n${factors.map((f) => `${f.name}：日${f.day} 周${f.week} → ${f.direction}`).join("\n")}`;
       }).join("\n")}`
     : "";
 
   const eventSection = eventCalendar && eventCalendar.thisWeek.length > 0
-    ? `\n## 本周关注事件\n${eventCalendar.thisWeek.map((e) => `- ${e.date}：${e.event}（${e.importance}，${e.category}）`).join("\n")}\n## 本月后续关注\n${(eventCalendar.thisMonthBeyondWeek || []).slice(0, 10).map((e) => `- ${e.date}：${e.event}（${e.importance}）`).join("\n")}`
+    ? `\n## 本周及本月关注事件\n本周：${eventCalendar.thisWeek.map((e) => `${e.date} ${e.event}（${e.importance}）`).join("；")}\n本月后续：${(eventCalendar.thisMonthBeyondWeek || []).slice(0, 8).map((e) => `${e.date} ${e.event}（${e.importance}）`).join("；")}`
     : "";
 
-  return `你是资深全球宏观策略分析师，专注于跨资产叙事识别和交易逻辑构建。
-你的任务是：基于以下真实市场数据，识别今天市场的主线叙事（不是传统的"增长/通胀象限"，而是市场真正在讲的故事），并给出有交易含义的判断。
+  return `你是资深全球宏观策略分析师。基于以下真实市场数据，生成精炼的定性判断。
+核心原则：各部分职责不同，严禁跨部分重复引用相同数据点和判断。
 
 # 市场数据
 
@@ -228,109 +224,81 @@ function buildPrompt(summary, eventCalendar) {
 交易质量：${summary.signals.tradeQuality}
 风险评分：${summary.signals.riskScore}
 
-## 美股与风险指标
-${summary.usRisk.map((r) => `- ${r.name}：${r.value}（日 ${r.day}，周 ${r.week}，月 ${r.month}）`).join("\n")}
+## 美股与风险
+${summary.usRisk.map((r) => `- ${r.name}：${r.value}（日 ${r.day}，周 ${r.week}）`).join("\n")}
 
 ## 利率与美元
-${summary.ratesDollar.map((r) => `- ${r.name}：${r.value}（日 ${r.day}，周 ${r.week}，月 ${r.month}）`).join("\n")}
+${summary.ratesDollar.map((r) => `- ${r.name}：${r.value}（日 ${r.day}，周 ${r.week}）`).join("\n")}
 
 ## 中国资产
-${summary.china.map((r) => `- ${r.name}：${r.value}（日 ${r.day}，周 ${r.week}，月 ${r.month}）`).join("\n")}
+${summary.china.map((r) => `- ${r.name}：${r.value}（日 ${r.day}，周 ${r.week}）`).join("\n")}
 
 ## 商品与全球
-${summary.commoditiesGlobal.map((r) => `- ${r.name}：${r.value}（日 ${r.day}，周 ${r.week}，月 ${r.month}）`).join("\n")}
+${summary.commoditiesGlobal.map((r) => `- ${r.name}：${r.value}（日 ${r.day}，周 ${r.week}）`).join("\n")}
 ${econSection}
-${cftcSection}
 ${factorSection}
 ${eventSection}
 
-## 今日重要新闻标题
-${summary.news.map((n) => `- [${n.source}] ${n.title}${n.summary ? " — " + n.summary : ""}`).join("\n")}
+## 今日重要新闻
+${summary.news.slice(0, 4).map((n) => `- [${n.source}] ${n.title}`).join("\n")}
 
-# 分析要求
+# 各部分职责定义（严格遵守）
 
-请基于以上数据，生成以下内容的 JSON。每一部分都必须基于数据中的**具体涨跌方向和幅度**来做判断，切忌写泛泛而谈的套话。
-
-要求：
-- **focus**（今日宏观焦点）：10-20字，概括今天市场最核心的交易主题或最关键的变量。
-- **trade**（市场交易主线）：10-15字，说明当前市场围绕什么定价。
-
-- **narrative**（主线叙事识别）：这是最重要的新增部分。识别市场今天在讲什么故事（如"AI算力叙事""去通胀叙事""信用风险叙事""避险叙事""流动性叙事""中国复苏叙事""日元套利逆转叙事"等）。
-  - **theme**：当前主线叙事名称（5-10字）
-  - **strength**：叙事强度（"强化中"/"维持"/"弱化中"/"切换中"）
-  - **assetsFollowing**：哪些资产正在跟随这个叙事（列出2-4个具体资产和涨跌幅）
-  - **assetsDiverging**：哪些资产正在背离这个叙事（如有，列出1-2个）
-  - **implication**：基于叙事强弱和跟随/背离，给出1-2句交易含义判断
-
-- **logic**（交易逻辑）：3-4条，每条1-2句。用数据说话，解释当前的跨资产传导逻辑。必须引用具体数值。
-
-- **outlook**（后续判断）：2-3条，每条1-2句。基于当前趋势和跨资产信号，给出短线展望。
-
-- **crossAsset**（跨资产信号）：6个维度的简短判断（各1句），必须引用数据：
-  - "股债关系"、"美元压力"、"信用风险"、"商品信号"、"中国资产"、"波动率"
-
-- **watchList**（后续观察）：4-5条，每条是具体需要跟踪的指标或事件。
-
-- **positioning**（仓位信号）：基于CFTC数据（如有），2-3条简短判断，说明哪个资产可能存在拥挤风险或仓位极端。
-
-- **factorRotation**（因子轮动要点）：2-3条，基于因子数据指出当前最强和最弱的因子方向，以及可能的轮动趋势。
+1. **narrative**（主线叙事）：识别今天市场在讲什么故事。只给叙事名称、强度、跟随/背离资产和1句交易含义。这是全卡最核心的定性判断，不展开论证。
+2. **logic**（交易逻辑）：2-3条，用具体数据解释跨资产传导。这是唯一引用具体数字的论证部分。严禁与narrative或crossAsset重复相同数据点。
+3. **outlook**（后续判断）：2条，纯方向性前瞻判断。不重复logic的论证，只给出"如果X则Y"的条件展望。
+4. **crossAsset**（跨资产信号）：6个维度，每个仅1句定性方向判断（≤15字），绝对不引用任何具体数字（数字在logic中已出现）。格式如："股债关系：利率压制成长"而非"股债关系：US 10Y +6bp压制Nasdaq -1.54%"。
+5. **watchList**（后续观察）：3条，仅列具体数据发布/政策事件/技术点位，不重复event calendar已列出的事件，不写前瞻判断（outlook已覆盖）。
 
 # 输出格式
 
-严格输出一个 JSON 对象，schema 如下：
+严格输出JSON：
 {
-  "focus": "string",
-  "trade": "string",
   "narrative": {
-    "theme": "string",
-    "strength": "string",
-    "assetsFollowing": [{"asset": "string", "move": "string"}],
-    "assetsDiverging": [{"asset": "string", "move": "string"}],
-    "implication": "string"
+    "theme": "5-10字叙事名称",
+    "strength": "强化中/维持/弱化中/切换中",
+    "assetsFollowing": [{"asset": "资产名", "move": "涨跌幅"}],
+    "assetsDiverging": [{"asset": "资产名", "move": "涨跌幅"}],
+    "implication": "1句交易含义"
   },
-  "logic": ["string", "string", "string"],
-  "outlook": ["string", "string"],
+  "logic": ["2-3条论证，每条1-2句，必须引用具体数值"],
+  "outlook": ["2条方向性前瞻，不重复logic"],
   "crossAsset": {
-    "股债关系": "string",
-    "美元压力": "string",
-    "信用风险": "string",
-    "商品信号": "string",
-    "中国资产": "string",
-    "波动率": "string"
+    "股债关系": "≤15字定性判断",
+    "美元压力": "≤15字定性判断",
+    "信用风险": "≤15字定性判断",
+    "商品信号": "≤15字定性判断",
+    "中国资产": "≤15字定性判断",
+    "波动率": "≤15字定性判断"
   },
-  "watchList": ["string", "string", "string", "string"],
-  "positioning": ["string", "string"],
-  "factorRotation": ["string", "string"]
+  "watchList": ["3条具体观察项，不重复事件日历"]
 }
 
-只输出 JSON，不要包含任何解释文字。`;
+只输出JSON，不要包含任何解释文字。`;
 }
 
 // ── Validate AI output ───────────────────────────────────────────────
 
 function validateAiText(text) {
-  const required = ["focus", "trade", "narrative", "logic", "outlook", "crossAsset", "watchList"];
+  const required = ["narrative", "logic", "outlook", "crossAsset", "watchList"];
   const missing = required.filter((k) => !text[k]);
   if (missing.length > 0) throw new Error(`AI output missing fields: ${missing.join(", ")}`);
-  if (!Array.isArray(text.logic) || text.logic.length < 2) throw new Error("logic must be array with >=2 items");
-  if (!Array.isArray(text.outlook) || text.outlook.length < 1) throw new Error("outlook must be array with >=1 item");
-  if (!Array.isArray(text.watchList) || text.watchList.length < 3) throw new Error("watchList must be array with >=3 items");
+  if (!Array.isArray(text.logic) || text.logic.length < 2 || text.logic.length > 3) throw new Error("logic must be array with 2-3 items");
+  if (!Array.isArray(text.outlook) || text.outlook.length < 1 || text.outlook.length > 2) throw new Error("outlook must be array with 1-2 items");
+  if (!Array.isArray(text.watchList) || text.watchList.length < 2 || text.watchList.length > 3) throw new Error("watchList must be array with 2-3 items");
   const crossKeys = ["股债关系", "美元压力", "信用风险", "商品信号", "中国资产", "波动率"];
   const crossMissing = crossKeys.filter((k) => !text.crossAsset[k]);
   if (crossMissing.length > 0) throw new Error(`crossAsset missing keys: ${crossMissing.join(", ")}`);
+  // Validate crossAsset values are short (≤20 chars, allowing some leniency)
+  for (const [k, v] of Object.entries(text.crossAsset)) {
+    if (v.length > 25) throw new Error(`crossAsset.${k} too long (${v.length} chars): ${v}`);
+  }
 
   // Validate narrative structure
   if (!text.narrative.theme || text.narrative.theme.length < 3) throw new Error("narrative.theme too short");
   if (!["强化中", "维持", "弱化中", "切换中"].includes(text.narrative.strength)) throw new Error(`narrative.strength invalid: ${text.narrative.strength}`);
   if (!Array.isArray(text.narrative.assetsFollowing) || text.narrative.assetsFollowing.length < 1) throw new Error("narrative.assetsFollowing must have >=1 item");
 
-  // Validate positioning and factorRotation (optional but should be arrays if present)
-  if (text.positioning && !Array.isArray(text.positioning)) throw new Error("positioning must be array");
-  if (text.factorRotation && !Array.isArray(text.factorRotation)) throw new Error("factorRotation must be array");
-
-  // Sanity check: focus and trade shouldn't be too short or generic
-  if (text.focus.length < 6) throw new Error("focus too short");
-  if (text.trade.length < 4) throw new Error("trade too short");
   console.log("AI_TEXT_VALIDATION OK");
 }
 
@@ -394,15 +362,12 @@ async function main() {
   fs.writeFileSync(dataPath, JSON.stringify(data, null, 2) + "\n");
   console.log(`AI_COMMENTARY_WRITTEN to ${dataPath}`);
   console.log("AI_COMMENTARY_PREVIEW=" + JSON.stringify({
-    focus: aiText.focus,
-    trade: aiText.trade,
-    narrative: aiText.narrative?.theme,
+    narrativeTheme: aiText.narrative?.theme,
     narrativeStrength: aiText.narrative?.strength,
+    narrativeImplication: aiText.narrative?.implication,
     logicCount: aiText.logic.length,
     outlookCount: aiText.outlook.length,
     watchCount: aiText.watchList.length,
-    positioningCount: (aiText.positioning || []).length,
-    factorRotationCount: (aiText.factorRotation || []).length,
   }));
 }
 
